@@ -477,6 +477,38 @@ What it proves on success:
   caught by this sweep, not masked by the residual "100元" inside
   "1100元".
 
+## Full synthetic acceptance smoke
+
+A repo-safe end-to-end check that the six-stage pipeline (`learn` →
+`validate-artifacts` → `confirm-mapping` → `run-preview` → `render-docx` →
+`validate-render`) holds together on a small clean synthetic case — no
+real data, no LLM, no GUI, no network, no Microsoft Office automation:
+
+```bash
+python -m pytest tests/test_acceptance_smoke.py -v
+```
+
+What it proves:
+
+- Builds a small inline synthetic pair with **zero** eligible
+  UNRESOLVED/LOW Word numbers (3 HIGH + 2 EXCLUDED date markers), so
+  `confirm-mapping` reaches `complete: true` without
+  `--allow-incomplete`.
+- Walks both the Python-API surface (`profile_workbook`, `render_docx`,
+  `validate_render`, ...) and the CLI surface (`cli_main([...])`), so a
+  regression in either layer fails the smoke.
+- Asserts that every expected artifact exists at every stage
+  (`mapping_review.xlsx`, `auto_mapping.yml`, `converted_template.docx`,
+  `confidence_report.md`, `confirmed_mapping.yml`,
+  `run_validation.xlsx`, `new_report.docx`, `render_log.yml`).
+- Asserts the final rendered docx contains **no** `{{ word_NNNN }}`
+  placeholder tokens — the silent-omission failure CLAUDE.md flags.
+- Includes a negative path that succeeds through `render-docx`, then
+  flips one `Status` cell in `run_validation.xlsx` to a fabricated
+  value; `validate-render` must exit `10` so a downstream consumer that
+  only checks for file existence cannot silently trust a tampered
+  audit.
+
 ## What this prototype is **not**
 
 - Not an LLM client. Matching and rendering are deterministic; any
