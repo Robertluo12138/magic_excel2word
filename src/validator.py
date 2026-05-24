@@ -41,6 +41,20 @@ class CoverageSummary:
     def coverage_ratio(self) -> float:
         return self.mapped / self.eligible if self.eligible else 0.0
 
+    @property
+    def strict_failures(self) -> int:
+        """Eligible Word numbers that fail the trust gate.
+
+        UNRESOLVED (no Excel source) and LOW (value match without strong
+        context) are both unsafe to ship into production rendering, so they
+        share a single gate. EXCLUDED is *not* counted — those were skipped
+        on purpose and have an audit-trail entry.
+        """
+        return (
+            self.by_confidence.get("UNRESOLVED", 0)
+            + self.by_confidence.get("LOW", 0)
+        )
+
 
 def summarize(matches: List[WordMatch]) -> CoverageSummary:
     summary = CoverageSummary(total=len(matches))

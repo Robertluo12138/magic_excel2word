@@ -1,0 +1,5 @@
+# Runtime + test dependencies for the learn-mode prototype.
+# Pinned to current-as-of-2026-05 baselines; bump only with intent.
+openpyxl>=3.1,<4
+python-docx>=1.1,<2
+pytest>=8.0,<9

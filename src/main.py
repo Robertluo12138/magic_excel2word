@@ -47,6 +47,15 @@ def build_parser() -> argparse.ArgumentParser:
     learn.add_argument("--excel", type=Path, required=True, help="Source Excel workbook (.xlsx)")
     learn.add_argument("--word", type=Path, required=True, help="Finished Word report (.docx)")
     learn.add_argument("--out", type=Path, required=True, help="Output directory for review artifacts")
+    learn.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Exit non-zero if any eligible Word number is UNRESOLVED or LOW. "
+            "Use this as a trust gate before any real-file or production step; "
+            "default (exploratory) mode still writes artifacts and only warns."
+        ),
+    )
 
     return parser
 
@@ -84,6 +93,34 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Word numbers profiled: {len(word_numbers)}")
         print(f"Mapping review       : {review_path}")
         print(f"Confidence report    : {report_path}")
+
+        # Trust gate: artifacts are always written so a reviewer can inspect
+        # what failed, but the exit code (or stderr warning) tells automation
+        # and humans whether this run is safe to act on.
+        failures = summary.strict_failures
+        if failures > 0:
+            unresolved = summary.by_confidence.get("UNRESOLVED", 0)
+            low = summary.by_confidence.get("LOW", 0)
+            detail = f"{failures} eligible Word number(s) are UNRESOLVED or LOW (UNRESOLVED={unresolved}, LOW={low})"
+            if args.strict:
+                print(
+                    "\n" + "!" * 72,
+                    f"STRICT GATE FAILED: {detail}.",
+                    f"Review {review_path} and {report_path} before any real-file pilot.",
+                    "!" * 72,
+                    sep="\n",
+                    file=sys.stderr,
+                )
+                return 3
+            print(
+                "\n" + "!" * 72,
+                f"WARNING: {detail}.",
+                "Artifacts were still written for exploratory review.",
+                "Re-run with --strict to fail loudly before any real-file pilot.",
+                "!" * 72,
+                sep="\n",
+                file=sys.stderr,
+            )
         return 0
 
     return 1
