@@ -25,17 +25,23 @@ python -m src.main learn \
     --word  samples/synthetic/finished_report.docx \
     --out   output
 
-# 4. Run the test suite.
+# 4. Cross-check the four artifacts agree with each other.
+python -m src.main validate-artifacts --out output
+
+# 5. Run the test suite.
 python -m pytest
 ```
 
 ## Learn-mode artifacts
 
-`learn` writes four files under `--out`:
+`learn` writes four files under `--out`. Every row in every file carries
+the same stable `word_id` (`word_0001`, `word_0002`, …), so the artifacts
+can be cross-referenced by Word ID and verified by
+`validate-artifacts` (see below).
 
 | File | Purpose |
 | --- | --- |
-| `mapping_review.xlsx` | One row per Word number with the top Excel candidate, confidence, interpretation, value/context scores, and overlap tokens. The substrate for the (future) human-confirmed mapping workflow. |
+| `mapping_review.xlsx` | One row per Word number with the top Excel candidate, confidence, interpretation, value/context scores, and overlap tokens. The leading columns (`Word ID`, `Review Status`, `Placeholder Status`, `Placeholder`) cross-reference `auto_mapping.yml` and the converted template — a reviewer can read the audit story off the first few columns before drilling into candidate details. The substrate for the (future) human-confirmed mapping workflow. |
 | `confidence_report.md` | Markdown overview that **leads with what needs review** — UNRESOLVED, LOW, ambiguous picks, and EXCLUDED-by-policy rows. |
 | `auto_mapping.yml` | Machine-readable map keyed by stable `word_id` (`word_0001`, `word_0002`, …). Every visible Word number is present — including UNRESOLVED, LOW, and EXCLUDED — with location, raw text, recommended Excel source (when available), transform metadata, and a `review_status` (`pending_review`, `needs_review`, `needs_source`, `audited_excluded`). |
 | `converted_template.docx` | Copy of the original report where only HIGH/MEDIUM tokens have been replaced by `{{ word_NNNN }}` placeholders. LOW, UNRESOLVED, and EXCLUDED values are intentionally **left visible** so a reviewer can still audit them; any safe replacement that could not be applied (offset/raw drift) is recorded in `auto_mapping.yml`'s `placeholder_status` field. |
@@ -90,6 +96,36 @@ python -m src.main learn --excel ... --word ... --out output --strict
 ```
 
 Other exit codes: `2` if `--excel` or `--word` is missing.
+
+## Cross-artifact consistency: `validate-artifacts`
+
+`learn` writes four files; `validate-artifacts` re-reads them and proves
+they tell the same story about every Word number — that is the contract
+the (future) human-confirmation step will depend on.
+
+```bash
+python -m src.main validate-artifacts --out output
+```
+
+What it proves on success:
+
+- every `word_id` is **unique** within both `mapping_review.xlsx` and
+  `auto_mapping.yml`;
+- there is **one XLSX review row per YAML mapping** (and vice versa);
+- shared rows **agree on `location`, raw token, and confidence/status**
+  — no drift between the human-facing XLSX and the machine-readable YAML;
+- a `{{ word_NNNN }}` placeholder appears in `converted_template.docx`
+  **only when** the YAML row marks `placeholder_status: applied`. LOW,
+  UNRESOLVED, and EXCLUDED tokens must **never** carry a placeholder
+  anywhere — that is the audit guarantee CLAUDE.md mandates;
+- if `auto_mapping.yml` reports any UNRESOLVED or EXCLUDED counts,
+  `confidence_report.md` **mentions them by name**, so a reviewer who
+  reads only the Markdown summary still sees what needs attention.
+
+Exit codes: `0` on success, `4` on consistency failure (with a per-issue
+list on stdout), `2` if `--out` is missing. The command never writes;
+it only reads. Treat a failure as a directive to look at the artifacts,
+not to re-run the pipeline.
 
 ## What this prototype is **not**
 

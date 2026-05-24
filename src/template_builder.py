@@ -227,7 +227,7 @@ def _write_auto_mapping_yaml(
             },
             "status": m.confidence,
             "confidence": m.confidence,
-            "review_status": _review_status(m.confidence, status_val),
+            "review_status": derive_review_status(m.confidence, status_val),
             "note": m.note,
             "placeholder": (
                 "{{ " + word_ids[i] + " }}" if status_val == "applied" else None
@@ -316,7 +316,7 @@ def _count_by_conf(matches: List[WordMatch]) -> Dict[str, int]:
     return counts
 
 
-def _review_status(confidence: str, placeholder_status: str) -> str:
+def derive_review_status(confidence: str, placeholder_status: str) -> str:
     """Single review-status enum derived from confidence + template outcome.
 
     ``HIGH``/``MEDIUM`` with an applied placeholder → ``pending_review``

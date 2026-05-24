@@ -14,10 +14,11 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from .artifact_validator import format_validation_summary, validate_artifacts
 from .excel_profiler import profile_workbook
 from .mapping_reviewer import write_confidence_report, write_mapping_review
 from .synthetic_generator import generate as generate_synthetic
-from .template_builder import write_template_artifacts
+from .template_builder import assign_word_ids, write_template_artifacts
 from .validator import format_console_summary, summarize
 from .value_matcher import match_word_numbers
 from .word_profiler import profile_document
@@ -58,6 +59,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    validate = sub.add_parser(
+        "validate-artifacts",
+        help=(
+            "Read-only cross-check of the four learn-mode artifacts under "
+            "--out: verify mapping_review.xlsx, auto_mapping.yml, "
+            "converted_template.docx, and confidence_report.md tell the same "
+            "story about every Word number."
+        ),
+    )
+    validate.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Output directory previously written by `learn`",
+    )
+
     return parser
 
 
@@ -85,9 +102,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         summary = summarize(matches)
 
         args.out.mkdir(parents=True, exist_ok=True)
-        review_path = write_mapping_review(matches, args.out / "mapping_review.xlsx")
-        report_path = write_confidence_report(matches, summary, args.out / "confidence_report.md")
+        # Template artifacts run first so we can pass the resulting word_ids
+        # and per-match placeholder status into the XLSX writer — the XLSX
+        # and YAML must agree on every join key, and the validator depends
+        # on that single source of truth.
         template_artifacts = write_template_artifacts(matches, args.word, args.out)
+        word_ids = assign_word_ids(matches)
+        review_path = write_mapping_review(
+            matches,
+            args.out / "mapping_review.xlsx",
+            word_ids,
+            template_artifacts.placeholder_status,
+        )
+        report_path = write_confidence_report(matches, summary, args.out / "confidence_report.md")
 
         print(format_console_summary(summary))
         print()
@@ -129,6 +156,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                 file=sys.stderr,
             )
         return 0
+
+    if args.command == "validate-artifacts":
+        if not args.out.exists():
+            print(f"error: output directory not found: {args.out}", file=sys.stderr)
+            return 2
+        report = validate_artifacts(args.out)
+        print(format_validation_summary(report, args.out))
+        # 4 keeps this distinct from 2 (input missing) and 3 (strict gate),
+        # so automation can tell *which* learn-mode contract failed.
+        return 0 if report.ok else 4
 
     return 1
 

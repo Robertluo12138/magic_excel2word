@@ -10,6 +10,7 @@ from src.excel_profiler import profile_workbook
 from src.main import main as cli_main
 from src.mapping_reviewer import write_confidence_report, write_mapping_review
 from src.synthetic_generator import generate
+from src.template_builder import assign_word_ids, write_template_artifacts
 from src.validator import summarize
 from src.value_matcher import match_word_numbers
 from src.word_profiler import WordNumber, profile_document
@@ -52,7 +53,13 @@ def test_learn_pipeline_meets_coverage_targets(tmp_path: Path):
     # Tightening this is fine; relaxing it deserves a code-level reason.
     assert summary.coverage_ratio >= 0.75, summary.by_confidence
 
-    review_path = write_mapping_review(matches, out_dir / "mapping_review.xlsx")
+    artifacts = write_template_artifacts(matches, docx_path, out_dir)
+    review_path = write_mapping_review(
+        matches,
+        out_dir / "mapping_review.xlsx",
+        assign_word_ids(matches),
+        artifacts.placeholder_status,
+    )
     report_path = write_confidence_report(matches, summary, out_dir / "confidence_report.md")
     assert review_path.exists()
     assert report_path.exists()

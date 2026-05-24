@@ -12,20 +12,30 @@ Two outputs:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 import openpyxl
 
+from .template_builder import derive_review_status
 from .validator import CoverageSummary
 from .value_matcher import WordMatch
 
+# The first four columns are the trust-slice keys: a stable Word ID (the
+# join key with auto_mapping.yml) plus the three columns that record what
+# the template builder did with the token. Keeping them up front means a
+# reviewer skimming the XLSX sees the audit story before the candidate
+# details.
 REVIEW_HEADERS = [
+    "Word ID",
     "Word Location",
     "Word Snippet",
     "Word Raw Token",
     "Word Value",
     "Word Unit",
     "Confidence",
+    "Review Status",
+    "Placeholder Status",
+    "Placeholder",
     "Top Excel Sheet",
     "Top Excel Cell",
     "Top Excel Value",
@@ -40,25 +50,45 @@ REVIEW_HEADERS = [
 ]
 
 
-def write_mapping_review(matches: List[WordMatch], out_path: Path) -> Path:
-    """Write the ``mapping_review.xlsx`` workbook to ``out_path``."""
+def write_mapping_review(
+    matches: List[WordMatch],
+    out_path: Path,
+    word_ids: List[str],
+    placeholder_status: Dict[int, str],
+) -> Path:
+    """Write the ``mapping_review.xlsx`` workbook to ``out_path``.
+
+    ``word_ids`` and ``placeholder_status`` must come from the same
+    template-builder run that produced ``auto_mapping.yml``; the validator
+    relies on the XLSX agreeing with the YAML on every join key.
+    """
+    if len(word_ids) != len(matches):
+        raise ValueError(
+            f"word_ids length {len(word_ids)} != matches length {len(matches)}"
+        )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "mapping_review"
     ws.append(REVIEW_HEADERS)
-    for m in matches:
+    for i, m in enumerate(matches):
         wn = m.word_number
         top = m.chosen or (m.candidates[0] if m.candidates else None)
+        ph_status = placeholder_status.get(i, "skipped_unknown")
+        placeholder = "{{ " + word_ids[i] + " }}" if ph_status == "applied" else ""
+        review = derive_review_status(m.confidence, ph_status)
+        trust_cols = [word_ids[i]]
+        trust_tail = [review, ph_status, placeholder]
         if top is not None:
             cell = top.cell
-            row = [
+            row = trust_cols + [
                 wn.location,
                 _truncate(wn.snippet, 200),
                 wn.raw,
                 wn.value,
                 wn.unit or "",
                 m.confidence,
+            ] + trust_tail + [
                 cell.sheet,
                 cell.address,
                 cell.numeric_value,
@@ -72,21 +102,23 @@ def write_mapping_review(matches: List[WordMatch], out_path: Path) -> Path:
                 m.note,
             ]
         else:
-            row = [
+            row = trust_cols + [
                 wn.location,
                 _truncate(wn.snippet, 200),
                 wn.raw,
                 wn.value,
                 wn.unit or "",
                 m.confidence,
+            ] + trust_tail + [
                 "", "", "", "", "", "", "", "", "", 0, m.note,
             ]
         ws.append(row)
 
-    ws.column_dimensions["A"].width = 18
-    ws.column_dimensions["B"].width = 50
-    ws.column_dimensions["C"].width = 16
-    ws.freeze_panes = "A2"
+    ws.column_dimensions["A"].width = 12  # Word ID
+    ws.column_dimensions["B"].width = 18  # Location
+    ws.column_dimensions["C"].width = 50  # Snippet
+    ws.column_dimensions["D"].width = 16  # Raw token
+    ws.freeze_panes = "B2"
     wb.save(str(out_path))
     return out_path
 
