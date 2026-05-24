@@ -17,6 +17,7 @@ from typing import List, Optional
 from .excel_profiler import profile_workbook
 from .mapping_reviewer import write_confidence_report, write_mapping_review
 from .synthetic_generator import generate as generate_synthetic
+from .template_builder import write_template_artifacts
 from .validator import format_console_summary, summarize
 from .value_matcher import match_word_numbers
 from .word_profiler import profile_document
@@ -86,6 +87,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.out.mkdir(parents=True, exist_ok=True)
         review_path = write_mapping_review(matches, args.out / "mapping_review.xlsx")
         report_path = write_confidence_report(matches, summary, args.out / "confidence_report.md")
+        template_artifacts = write_template_artifacts(matches, args.word, args.out)
 
         print(format_console_summary(summary))
         print()
@@ -93,6 +95,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Word numbers profiled: {len(word_numbers)}")
         print(f"Mapping review       : {review_path}")
         print(f"Confidence report    : {report_path}")
+        print(f"Auto mapping (YAML)  : {template_artifacts.yaml_path}")
+        print(
+            f"Converted template   : {template_artifacts.docx_path} "
+            f"({template_artifacts.placeholders_applied} placeholders applied)"
+        )
 
         # Trust gate: artifacts are always written so a reviewer can inspect
         # what failed, but the exit code (or stderr warning) tells automation

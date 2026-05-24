@@ -31,16 +31,23 @@ python -m pytest
 
 ## Learn-mode artifacts
 
-`learn` writes two files under `--out`:
+`learn` writes four files under `--out`:
 
 | File | Purpose |
 | --- | --- |
 | `mapping_review.xlsx` | One row per Word number with the top Excel candidate, confidence, interpretation, value/context scores, and overlap tokens. The substrate for the (future) human-confirmed mapping workflow. |
 | `confidence_report.md` | Markdown overview that **leads with what needs review** — UNRESOLVED, LOW, ambiguous picks, and EXCLUDED-by-policy rows. |
+| `auto_mapping.yml` | Machine-readable map keyed by stable `word_id` (`word_0001`, `word_0002`, …). Every visible Word number is present — including UNRESOLVED, LOW, and EXCLUDED — with location, raw text, recommended Excel source (when available), transform metadata, and a `review_status` (`pending_review`, `needs_review`, `needs_source`, `audited_excluded`). |
+| `converted_template.docx` | Copy of the original report where only HIGH/MEDIUM tokens have been replaced by `{{ word_NNNN }}` placeholders. LOW, UNRESOLVED, and EXCLUDED values are intentionally **left visible** so a reviewer can still audit them; any safe replacement that could not be applied (offset/raw drift) is recorded in `auto_mapping.yml`'s `placeholder_status` field. |
 
 The console summary mirrors the report header and, when relevant, lists
 sample entries from each problem bucket so you can spot issues without
 opening the artifacts first.
+
+> The template builder produces a **review substrate**, not a production
+> Word renderer. `{{ word_NNNN }}` placeholders are a contract for a
+> future deterministic renderer to honor once a human-confirmed
+> `confirmed_mapping.yml` exists; no `run` subcommand exists today.
 
 ## Confidence statuses
 

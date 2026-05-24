@@ -2,4 +2,8 @@
 # Pinned to current-as-of-2026-05 baselines; bump only with intent.
 openpyxl>=3.1,<4
 python-docx>=1.1,<2
+# YAML is the human-reviewable substrate for auto_mapping.yml; the schema
+# is intentionally deterministic (no flow style, sort_keys=False) so diffs
+# stay readable across runs.
+PyYAML>=6.0,<7
 pytest>=8.0,<9

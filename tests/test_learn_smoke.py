@@ -74,6 +74,8 @@ def test_cli_generate_then_learn(tmp_path: Path):
     assert rc == 0
     assert (output / "mapping_review.xlsx").exists()
     assert (output / "confidence_report.md").exists()
+    assert (output / "auto_mapping.yml").exists()
+    assert (output / "converted_template.docx").exists()
 
 
 def test_learn_cli_errors_on_missing_files(tmp_path: Path, capsys):

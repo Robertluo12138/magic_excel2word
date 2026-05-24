@@ -146,11 +146,11 @@ def test_requirements_lists_current_runtime_and_test_deps():
     assert req_path.exists(), "requirements.txt must live at repo root"
     text = req_path.read_text(encoding="utf-8")
 
-    for pkg in ("openpyxl", "python-docx", "pytest"):
+    for pkg in ("openpyxl", "python-docx", "PyYAML", "pytest"):
         assert pkg in text, f"requirements.txt missing {pkg}"
 
     # Guard against silent scope creep — anything beyond the deterministic
-    # learn-mode trio should be a deliberate, reviewed addition.
+    # learn-mode quartet should be a deliberate, reviewed addition.
     forbidden = ("openai", "anthropic", "torch", "tensorflow", "langchain")
     lowered = text.lower()
     for pkg in forbidden:
@@ -162,6 +162,9 @@ def test_requirements_lists_current_runtime_and_test_deps():
     "generate-synthetic",
     "mapping_review.xlsx",
     "confidence_report.md",
+    "auto_mapping.yml",
+    "converted_template.docx",
+    "{{ word_NNNN }}",
     "HIGH",
     "MEDIUM",
     "LOW",
