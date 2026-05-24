@@ -1,9 +1,11 @@
-# magic_excel2word — learn-mode prototype
+# magic_excel2word — learn-mode prototype + run-preview
 
 Traceable pipeline that pairs a historical Excel workbook with its finished
 Word report, locates every visible Word number, and produces reviewable
-mapping artifacts. The current scope is **learn mode only** — no production
-rendering, no LLM, no GUI. See `CLAUDE.md` for the full design rules.
+mapping artifacts. The pipeline now also includes a narrow **run-preview**
+step that resolves a human-confirmed mapping against a NEW Excel workbook
+and emits a per-row validation artifact — still **no Word rendering, no
+LLM, no GUI**. See `CLAUDE.md` for the full design rules.
 
 > ⚠️ **Status: prototype.** Run only against synthetic samples until the
 > trust gate (`learn --strict`) passes on a real pair you have reviewed.
@@ -192,12 +194,102 @@ even when `review_required` is non-empty. The YAML records
 downstream consumer can refuse to render from a partial file. Never use this
 as the default in automation pointing at real data.
 
+## Run-mode preview: `run-preview`
+
+`run-preview` is the narrow next step on the path from confirmed mappings
+toward production rendering. It takes a NEW period's Excel workbook plus
+the existing `confirmed_mapping.yml` and asks one question per confirmed
+row: *does the recorded `(sheet, cell)` still hold a numeric value the
+transform knows how to interpret?* It does **not** render a Word
+document; it writes a per-row validation table so a reviewer can verify
+the mapping is still trustworthy before any rendering work begins.
+
+```bash
+python -m src.main run-preview \
+    --excel     path/to/new_period.xlsx \
+    --confirmed output/confirmed_mapping.yml \
+    --out       output/run_preview
+```
+
+The artifact is `run_validation.xlsx` under `--out`. Columns:
+
+| Column | Meaning |
+| --- | --- |
+| `Word ID` / `Word Location` | Stable join keys from learn mode. |
+| `Word Context` / `Word Raw Token` / `Word Unit` | What the historical Word report said at this position — surfaced so a reviewer can sanity-check that the new Excel value reads naturally back into the same sentence. |
+| `Source Sheet` / `Source Cell` | The confirmed `(sheet, cell)` resolved against the new workbook. |
+| `Raw Excel Value` | The literal numeric value the new workbook holds at that cell. |
+| `Generated Value` | `Raw Excel Value` after applying the recorded transform (e.g. `excel / 10000` for `万元→base_unit`). This is the unrounded number a future renderer would display; formatting is deferred. |
+| `Transform Interpretation` | The interpretation label carried over from learn time (`as_written`, `万元→base_unit`, `%→decimal`, …). |
+| `Confidence` | Original learn-time confidence (`HIGH` / `MEDIUM`). |
+| `Status` | Per-row run-preview outcome — see below. |
+| `Detail` | Free-text reason populated when `Status` is not `ok`. |
+
+### Fail-loud gates
+
+`run-preview` exits non-zero on any of:
+
+- `confirmed_mapping.yml` cannot prove it is complete. The check is
+  fail-CLOSED: the `summary` block must exist, `summary.complete` must
+  be the literal boolean `true` (a missing key, `null`, the string
+  `"true"`, or `1` all refuse), `summary.allow_incomplete` must not be
+  `true`, `review_required` must be empty, and there must be at least
+  one `confirmed_mappings` entry. The CLI exits `6` **without writing
+  an artifact**; the input is unusable.
+- Any confirmed source `(sheet, cell)` is missing in the new workbook,
+  is empty, or holds a non-numeric value. The CLI exits `7` and the
+  artifact is **still written** so the reviewer can see which rows broke
+  and why. Per-row statuses surfaced in this case:
+  `missing_sheet`, `missing_cell`, `non_numeric_cell`,
+  `missing_confirmed_source`.
+- The transform interpretation on a confirmed row is unknown to the v1
+  transform table or absent. Per-row statuses: `transform_unknown`,
+  `missing_transform`. CLI exits `7` and the artifact is still written.
+
+Other exit codes: `2` if `--excel` or `--confirmed` is missing.
+
+### v1 transform coverage
+
+The inverse transforms used to derive `Generated Value` from
+`Raw Excel Value` mirror the candidate-value table in
+`src/number_normalizer.py`. Currently supported:
+
+- `as_written` (no conversion)
+- `万元→base_unit`, `万人→base_unit`, `万次→base_unit`, `万个→base_unit`,
+  `万单→base_unit`, `万→base_unit` (Excel ÷ 10,000)
+- `亿元→base_unit`, `亿单→base_unit` (Excel ÷ 100,000,000)
+- `千元→元` (÷ 1,000), `百万元→元` (÷ 1,000,000)
+- `%→decimal` (× 100), `‰→decimal` (× 1,000)
+- `base→万` (× 10,000)
+
+Any interpretation outside this table is a v1 limitation — `run-preview`
+fails loudly rather than silently producing an incorrect rendered number.
+
+### Limitations of v1
+
+- No Word document is rendered. The deterministic renderer that consumes
+  `run_validation.xlsx` + `converted_template.docx` is intentionally out
+  of scope until the preview artifact has been reviewed in anger.
+- The `Generated Value` is the unrounded numeric value. Number-formatting
+  to match the original report's display (`23,456.79万元` vs `23456.789`)
+  belongs to a future renderer.
+- Date/period markers (`audit_only_excluded`) and `review_required` rows
+  do not participate in the preview at all — by design. Only confirmed
+  rows are extracted.
+- When `source_origin` is `reviewer_override:alternative`, the confirmed
+  entry carries that alternative's own transform interpretation rather
+  than the recommended pick's — so `run-preview` applies the correct
+  unit factor for the cell the reviewer actually chose. The invariant
+  is pinned by `test_override_to_alternative_carries_alternative_transform`
+  and `test_alternative_override_applies_correct_transform_end_to_end`.
+
 ## What this prototype is **not**
 
-- Not a renderer. There is no `run` subcommand yet; production Word output
-  must wait until human-confirmed mappings + a deterministic template path.
+- Not a Word renderer. `run-preview` is a per-row validation table, not a
+  `.docx` writer; production Word output still has to wait for the
+  deterministic renderer step.
 - Not an LLM client. Matching is deterministic; any future reranker must
   layer on top of, not replace, the candidate list.
 - Not safe for real company files until `--strict` passes and a reviewer
   has signed off on the mapping. Keep real data out of the repo per
-  `CLAUDE.md`’s privacy rules.
+  `CLAUDE.md`'s privacy rules.

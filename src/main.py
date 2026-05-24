@@ -10,8 +10,13 @@ Subcommands for the learn-mode trust loop:
     ``confirmed_mapping.yml``. Blank/reject/LOW/UNRESOLVED/invalid rows
     stay visible as ``review_required`` and the run fails unless
     ``--allow-incomplete`` is passed.
+  * ``run-preview`` — narrow run-mode preview. Resolves each confirmed
+    mapping against a NEW Excel workbook and writes a per-row run
+    validation artifact. **Does not render a Word document.**
 
-Future commands (``run`` for production rendering) are intentionally absent.
+Future commands (full ``run`` for production Word rendering) are
+intentionally absent — `run-preview` is the bridge that proves the
+confirmed mappings still resolve cleanly against a new period.
 """
 from __future__ import annotations
 
@@ -28,6 +33,11 @@ from .mapping_confirmer import (
     write_confirmed_yaml,
 )
 from .mapping_reviewer import write_confidence_report, write_mapping_review
+from .run_preview import (
+    format_console_summary as format_preview_summary,
+    run_preview,
+    write_run_validation,
+)
 from .synthetic_generator import generate as generate_synthetic
 from .template_builder import assign_word_ids, write_template_artifacts
 from .validator import format_console_summary, summarize
@@ -122,6 +132,36 @@ def build_parser() -> argparse.ArgumentParser:
             "even when review_required is non-empty. Default behaviour is to "
             "fail (exit 5) so unreviewed rows can't sneak past the gate."
         ),
+    )
+
+    preview = sub.add_parser(
+        "run-preview",
+        help=(
+            "Resolve confirmed_mapping.yml against a NEW Excel workbook and "
+            "write run_validation.xlsx — one row per confirmed word_id with "
+            "raw Excel value, generated value, transform, confidence, and "
+            "per-row status. Fails loudly on incomplete confirmed mapping, "
+            "missing source sheet/cell, non-numeric cells, or unknown "
+            "transforms. Does NOT render a Word document."
+        ),
+    )
+    preview.add_argument(
+        "--excel",
+        type=Path,
+        required=True,
+        help="New-period Excel workbook to extract values from (.xlsx)",
+    )
+    preview.add_argument(
+        "--confirmed",
+        type=Path,
+        required=True,
+        help="confirmed_mapping.yml produced by `confirm-mapping`",
+    )
+    preview.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Output directory for run_validation.xlsx",
     )
 
     return parser
@@ -257,6 +297,34 @@ def main(argv: Optional[List[str]] = None) -> int:
         # 4 (validate-artifacts) so automation can tell which gate held.
         if confirm_report.review_required and not args.allow_incomplete:
             return 5
+        return 0
+
+    if args.command == "run-preview":
+        if not args.excel.exists():
+            print(f"error: excel file not found: {args.excel}", file=sys.stderr)
+            return 2
+        if not args.confirmed.exists():
+            print(f"error: confirmed mapping not found: {args.confirmed}", file=sys.stderr)
+            return 2
+
+        preview_report = run_preview(args.excel, args.confirmed)
+        if preview_report.fatal_errors:
+            # Don't write an artifact when the confirmed_mapping.yml is
+            # unusable — there's nothing meaningful to populate.
+            print(format_preview_summary(preview_report, None), file=sys.stderr)
+            # 6 keeps this distinct from 2 (missing inputs), 3 (strict gate),
+            # 4 (validate-artifacts), 5 (incomplete confirm) so automation
+            # can tell which gate held.
+            return 6
+
+        out_path = write_run_validation(preview_report, args.out)
+        # Per-row failures get printed to stdout (artifact is written) so
+        # a reviewer can inspect every row, but the exit code is 7 so
+        # automation halts before any downstream rendering step.
+        if preview_report.failures:
+            print(format_preview_summary(preview_report, out_path), file=sys.stderr)
+            return 7
+        print(format_preview_summary(preview_report, out_path))
         return 0
 
     return 1

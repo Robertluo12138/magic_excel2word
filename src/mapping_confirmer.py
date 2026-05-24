@@ -501,10 +501,42 @@ def _confirmed_payload(
             "value": source.get("value"),
         },
         "source_origin": source_origin,
-        "transform": entry.get("transform"),
+        "transform": _transform_for_source(entry, source, source_origin),
         "placeholder": entry.get("placeholder"),
         "placeholder_status": entry.get("placeholder_status"),
     }
+
+
+def _transform_for_source(
+    entry: Dict, source: Dict, source_origin: str,
+) -> Optional[Dict]:
+    """Pick the transform metadata that matches the chosen source cell.
+
+    When the reviewer overrode to an alternative, that alternative's
+    own interpretation/scores live on the source dict — auto_mapping.yml
+    serialises each alternative with its own ``interpretation``,
+    ``value_score``, ``context_score``, and ``overlap_tokens``. Copying
+    the recommended pick's transform instead would silently apply the
+    wrong unit factor at run-preview time (e.g. ``万元→base_unit`` over
+    a cell the reviewer picked because it's stored ``as_written``),
+    producing a confidently-wrong rendered number.
+
+    For ``recommended`` or ``reviewer_override:recommended`` origins,
+    keep the matcher's recommended transform. If an alternative is
+    missing an explicit interpretation (defensive — real auto_mapping
+    output always includes one), fall back to the recommended transform
+    rather than emit a partial dict.
+    """
+    if source_origin == "reviewer_override:alternative":
+        interpretation = source.get("interpretation")
+        if interpretation:
+            return {
+                "interpretation": interpretation,
+                "value_score": source.get("value_score"),
+                "context_score": source.get("context_score"),
+                "overlap_tokens": list(source.get("overlap_tokens") or []),
+            }
+    return entry.get("transform")
 
 
 def _review_required_payload(

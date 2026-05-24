@@ -355,6 +355,79 @@ def test_reviewer_override_matching_recommended_succeeds(tmp_path: Path):
     assert conf["source_origin"] == "reviewer_override:recommended"
 
 
+def test_override_to_alternative_carries_alternative_transform(tmp_path: Path):
+    """The reviewer override picks an alternative whose interpretation
+    differs from the recommended pick's. The confirmed entry's
+    ``transform`` must reflect the *alternative*'s interpretation —
+    otherwise a downstream renderer (run-preview / future Word renderer)
+    silently applies the wrong unit factor to the cell the reviewer
+    actually picked, producing a confidently-wrong number."""
+    rec = _source("月度", "B2", 1_000_000.0)
+    # Build the recommended-side transform inline so the alternative's
+    # interpretation can deliberately differ.
+    alt = {
+        **_source("周度", "B6", 100.0),
+        "interpretation": "as_written",  # ← differs from recommended below
+        "value_score": 1.0,
+        "context_score": 0.85,
+        "overlap_tokens": ["收入"],
+    }
+    entry = _entry("word_0001", status="HIGH", recommended=rec, alternatives=[alt])
+    # Pin the recommended transform to something distinguishable so the
+    # bug (copying it onto an alternative override) would be visible.
+    entry["transform"] = {
+        "interpretation": "万元→base_unit",  # ← the WRONG factor for the alt cell
+        "value_score": 0.85,
+        "context_score": 1.0,
+        "overlap_tokens": ["营收"],
+    }
+    auto = _write_auto_yaml(tmp_path / "auto.yml", [entry])
+    review = _write_review_xlsx(
+        tmp_path / "review.xlsx", [entry],
+        decisions={"word_0001": {
+            "decision": "confirm", "sheet": "周度", "cell": "B6",
+        }},
+    )
+    report = confirm_mappings(auto, review)
+    [conf] = report.confirmed
+    assert conf["source_origin"] == "reviewer_override:alternative"
+    assert conf["confirmed_source"] == {"sheet": "周度", "address": "B6", "value": 100.0}
+    # The bug we are protecting against: confirmed["transform"]
+    # silently inherits the recommended pick's "万元→base_unit", which
+    # at run-preview time would divide the alternative's 100.0 cell by
+    # 10,000. The fix promotes the alternative's own "as_written".
+    assert conf["transform"]["interpretation"] == "as_written"
+    assert conf["transform"]["overlap_tokens"] == ["收入"]
+    assert conf["transform"]["value_score"] == 1.0
+
+
+def test_override_to_recommended_preserves_recommended_transform(tmp_path: Path):
+    """The mirror invariant: a recommended-pick override (or blank
+    override that defaults to recommended) must keep the recommended
+    transform untouched, not pull anything from an alternative."""
+    rec = _source("月度", "B2", 100.0)
+    alt = {
+        **_source("周度", "B6", 100.0),
+        "interpretation": "万元→base_unit",
+        "value_score": 0.85,
+        "context_score": 0.45,
+        "overlap_tokens": ["万元"],
+    }
+    entry = _entry("word_0001", status="HIGH", recommended=rec, alternatives=[alt])
+    auto = _write_auto_yaml(tmp_path / "auto.yml", [entry])
+    review = _write_review_xlsx(
+        tmp_path / "review.xlsx", [entry],
+        decisions={"word_0001": {
+            "decision": "confirm", "sheet": "月度", "cell": "B2",
+        }},
+    )
+    report = confirm_mappings(auto, review)
+    [conf] = report.confirmed
+    assert conf["source_origin"] == "reviewer_override:recommended"
+    assert conf["transform"]["interpretation"] == "as_written"  # the recommended one
+    assert conf["transform"]["overlap_tokens"] == ["收入"]
+
+
 # ---------------------------------------------------------------------------
 # Invalid override cells must fail loudly.
 # ---------------------------------------------------------------------------
