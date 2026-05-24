@@ -25,6 +25,11 @@ from .value_matcher import WordMatch
 # the template builder did with the token. Keeping them up front means a
 # reviewer skimming the XLSX sees the audit story before the candidate
 # details.
+#
+# The final four columns are the reviewer-facing decision columns. They
+# are written blank on every learn run and only `confirm-mapping` reads
+# them back — never the matcher. Blank must never be treated as
+# "confirmed"; that is enforced in src.mapping_confirmer.
 REVIEW_HEADERS = [
     "Word ID",
     "Word Location",
@@ -47,7 +52,13 @@ REVIEW_HEADERS = [
     "Overlap Tokens",
     "# Alt Candidates",
     "Note",
+    "Reviewer Decision",
+    "Reviewer Notes",
+    "Confirmed Sheet",
+    "Confirmed Cell",
 ]
+
+REVIEWER_COLUMNS = ("Reviewer Decision", "Reviewer Notes", "Confirmed Sheet", "Confirmed Cell")
 
 
 def write_mapping_review(
@@ -79,6 +90,10 @@ def write_mapping_review(
         review = derive_review_status(m.confidence, ph_status)
         trust_cols = [word_ids[i]]
         trust_tail = [review, ph_status, placeholder]
+        # Reviewer-facing columns: blank by default on every learn run.
+        # confirm-mapping reads these back; blank must never be promoted
+        # to "confirmed" — that contract lives in src.mapping_confirmer.
+        reviewer_cols = ["", "", "", ""]
         if top is not None:
             cell = top.cell
             row = trust_cols + [
@@ -100,7 +115,7 @@ def write_mapping_review(
                 ", ".join(top.overlap_tokens),
                 max(0, len(m.candidates) - 1),
                 m.note,
-            ]
+            ] + reviewer_cols
         else:
             row = trust_cols + [
                 wn.location,
@@ -111,7 +126,7 @@ def write_mapping_review(
                 m.confidence,
             ] + trust_tail + [
                 "", "", "", "", "", "", "", "", "", 0, m.note,
-            ]
+            ] + reviewer_cols
         ws.append(row)
 
     ws.column_dimensions["A"].width = 12  # Word ID

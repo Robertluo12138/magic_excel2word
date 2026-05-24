@@ -28,7 +28,15 @@ python -m src.main learn \
 # 4. Cross-check the four artifacts agree with each other.
 python -m src.main validate-artifacts --out output
 
-# 5. Run the test suite.
+# 5. After a human reviews `output/mapping_review.xlsx`, promote
+#    confirmed rows into `confirmed_mapping.yml`. Will fail (exit 5)
+#    on a fresh, unreviewed file — that is the expected gate.
+python -m src.main confirm-mapping \
+    --auto   output/auto_mapping.yml \
+    --review output/mapping_review.xlsx \
+    --out    output/confirmed_mapping.yml
+
+# 6. Run the test suite.
 python -m pytest
 ```
 
@@ -126,6 +134,63 @@ Exit codes: `0` on success, `4` on consistency failure (with a per-issue
 list on stdout), `2` if `--out` is missing. The command never writes;
 it only reads. Treat a failure as a directive to look at the artifacts,
 not to re-run the pipeline.
+
+## Reviewer handoff: `confirm-mapping`
+
+`learn` writes a candidate mapping; `confirm-mapping` is the human-in-the-loop
+gate that promotes reviewer-approved rows into `confirmed_mapping.yml`. The
+two artifacts a reviewer touches are:
+
+- `output/mapping_review.xlsx` — the per-row review sheet. The trailing four
+  columns are **blank by default** and only this command reads them back:
+
+  | Column | Meaning |
+  | --- | --- |
+  | `Reviewer Decision` | One of `confirm`, `reject`, or blank. Case-insensitive, whitespace-trimmed. Anything else is treated as an invalid decision. |
+  | `Reviewer Notes` | Free-text; round-tripped into both the confirmed entry and the `review_required` list so the reason for a hold is preserved. |
+  | `Confirmed Sheet` / `Confirmed Cell` | Optional override. Leave both blank to confirm the matcher's recommended source. Fill in *both* (sheet AND cell) to pick one of the YAML `alternatives` instead. A partial override (only one of the two) is invalid by design. |
+
+- `output/auto_mapping.yml` — the machine truth from `learn`. This is the only
+  source of legal Excel candidates: an override must name a `(sheet, cell)`
+  that already exists as either the row's `recommended_source` or one of its
+  `alternatives`. Inventing a fresh cell address is rejected because it would
+  bypass the matcher's value/context agreement.
+
+```bash
+python -m src.main confirm-mapping \
+    --auto   output/auto_mapping.yml \
+    --review output/mapping_review.xlsx \
+    --out    output/confirmed_mapping.yml \
+    [--allow-incomplete]
+```
+
+`confirmed_mapping.yml` has three buckets. Every row in `auto_mapping.yml`
+ends up in **exactly one** of them — that is the no-silent-omission contract:
+
+| Bucket | What goes here |
+| --- | --- |
+| `confirmed_mappings` | HIGH/MEDIUM rows the reviewer explicitly marked `confirm` whose source is either the recommended pick (blank override) or matches an alternative (full override). Carries `word_id`, `location`, `raw`, `value`, `unit`, `status`/`confidence`, `recommended_source`, `confirmed_source`, `source_origin` (`recommended`, `reviewer_override:recommended`, `reviewer_override:alternative`), `transform` metadata, `reviewer_decision`, and `reviewer_notes`. |
+| `review_required` | Every eligible row that did not pass: blank decision (`blank_decision`), reject (`rejected`), invalid/incomplete override (`invalid_override:…`, `incomplete_override:…`), LOW (`low_confidence_cannot_confirm`), UNRESOLVED (`unresolved_no_candidate`), HIGH/MEDIUM whose template placeholder was skipped by `learn` (`non_renderable_template_skip:…` — the converted .docx has no placeholder for a renderer to substitute into, so promoting the row would silently omit the metric at render time), or any unrecognised decision string (`invalid_decision:…`). Includes the recommended source and alternatives so the reviewer can decide what to do next. |
+| `audit_only_excluded` | Every matcher-EXCLUDED row (date/period markers). These never become confirmed mappings — even if a reviewer types `confirm`, the decision is recorded for the audit trail but the row stays audit-only. |
+
+### Exit codes
+
+- `0` — every eligible row is in `confirmed_mappings` or `audit_only_excluded`,
+  or `--allow-incomplete` was passed.
+- `2` — `--auto` or `--review` is missing, or the two artifacts are out of
+  sync (e.g. a Word ID in the XLSX has no entry in the YAML; run
+  `validate-artifacts` and re-run `learn` if needed).
+- `5` — at least one row is in `review_required`. The output YAML is still
+  written so a reviewer can see exactly what is blocking, but the gate
+  refuses to claim a complete mapping.
+
+### `--allow-incomplete`
+
+Exploratory escape hatch only. Writes `confirmed_mapping.yml` and exits `0`
+even when `review_required` is non-empty. The YAML records
+`summary.allow_incomplete: true` and `summary.complete: false`, so any
+downstream consumer can refuse to render from a partial file. Never use this
+as the default in automation pointing at real data.
 
 ## What this prototype is **not**
 

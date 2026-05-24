@@ -1,11 +1,17 @@
 """CLI entry point: ``python -m src.main <subcommand>``.
 
-Only two subcommands exist for this first traceability milestone:
+Subcommands for the learn-mode trust loop:
   * ``generate-synthetic`` — emit a paired fake Excel + Word sample so the
     learn pipeline can be exercised without real company data.
   * ``learn`` — profile, match, and produce reviewable artifacts.
+  * ``validate-artifacts`` — cross-check the four learn-mode artifacts.
+  * ``confirm-mapping`` — read reviewer decisions from
+    ``mapping_review.xlsx`` and promote confirmed rows into
+    ``confirmed_mapping.yml``. Blank/reject/LOW/UNRESOLVED/invalid rows
+    stay visible as ``review_required`` and the run fails unless
+    ``--allow-incomplete`` is passed.
 
-Future commands (``run``, ``confirm-mapping``, etc.) are intentionally absent.
+Future commands (``run`` for production rendering) are intentionally absent.
 """
 from __future__ import annotations
 
@@ -16,6 +22,11 @@ from typing import List, Optional
 
 from .artifact_validator import format_validation_summary, validate_artifacts
 from .excel_profiler import profile_workbook
+from .mapping_confirmer import (
+    confirm_mappings,
+    format_console_summary as format_confirm_summary,
+    write_confirmed_yaml,
+)
 from .mapping_reviewer import write_confidence_report, write_mapping_review
 from .synthetic_generator import generate as generate_synthetic
 from .template_builder import assign_word_ids, write_template_artifacts
@@ -73,6 +84,44 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="Output directory previously written by `learn`",
+    )
+
+    confirm = sub.add_parser(
+        "confirm-mapping",
+        help=(
+            "Promote reviewer-confirmed rows from mapping_review.xlsx + "
+            "auto_mapping.yml into confirmed_mapping.yml. Blank decisions, "
+            "rejections, LOW/UNRESOLVED rows, and invalid overrides stay "
+            "visible as review_required; the command fails unless "
+            "--allow-incomplete is set."
+        ),
+    )
+    confirm.add_argument(
+        "--auto",
+        type=Path,
+        required=True,
+        help="Path to auto_mapping.yml (written by `learn`)",
+    )
+    confirm.add_argument(
+        "--review",
+        type=Path,
+        required=True,
+        help="Path to mapping_review.xlsx with reviewer decisions filled in",
+    )
+    confirm.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Path to write confirmed_mapping.yml",
+    )
+    confirm.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help=(
+            "Exploratory escape hatch: write confirmed_mapping.yml and exit 0 "
+            "even when review_required is non-empty. Default behaviour is to "
+            "fail (exit 5) so unreviewed rows can't sneak past the gate."
+        ),
     )
 
     return parser
@@ -166,6 +215,49 @@ def main(argv: Optional[List[str]] = None) -> int:
         # 4 keeps this distinct from 2 (input missing) and 3 (strict gate),
         # so automation can tell *which* learn-mode contract failed.
         return 0 if report.ok else 4
+
+    if args.command == "confirm-mapping":
+        if not args.auto.exists():
+            print(f"error: auto mapping not found: {args.auto}", file=sys.stderr)
+            return 2
+        if not args.review.exists():
+            print(f"error: review xlsx not found: {args.review}", file=sys.stderr)
+            return 2
+
+        confirm_report = confirm_mappings(args.auto, args.review)
+        if confirm_report.fatal_errors:
+            # Fatal errors mean the inputs themselves are unusable. Surface
+            # the reasons and refuse to write a confirmed mapping so a
+            # human reviewer can fix the artifacts before retrying.
+            print(
+                format_confirm_summary(confirm_report, None, args.allow_incomplete),
+                file=sys.stderr,
+            )
+            return 2
+
+        # ``total_word_numbers`` is read back from auto_mapping.yml's
+        # summary so the confirmed file can be cross-checked against the
+        # learn run without re-parsing the original Word doc.
+        import yaml as _yaml  # local: keeps top-level imports minimal
+
+        auto_doc = _yaml.safe_load(args.auto.read_text(encoding="utf-8")) or {}
+        total = int((auto_doc.get("summary") or {}).get("total") or 0)
+
+        out_path = write_confirmed_yaml(
+            confirm_report,
+            args.auto,
+            args.review,
+            args.out,
+            allow_incomplete=args.allow_incomplete,
+            total_word_numbers=total,
+        )
+        print(format_confirm_summary(confirm_report, out_path, args.allow_incomplete))
+
+        # 5 keeps this distinct from 2 (missing input), 3 (strict gate),
+        # 4 (validate-artifacts) so automation can tell which gate held.
+        if confirm_report.review_required and not args.allow_incomplete:
+            return 5
+        return 0
 
     return 1
 
