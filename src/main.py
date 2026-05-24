@@ -20,6 +20,13 @@ Subcommands for the learn-mode trust loop:
     when the template references a word_id absent from validation,
     when validation has an unused word_id, or when display formatting
     cannot be safely inferred from the historical raw token.
+  * ``validate-render`` — read-only cross-check of the three rendered
+    outputs (``new_report.docx``, ``render_log.yml``,
+    ``run_validation.xlsx``). Fails loudly if the rendered docx still
+    carries placeholders, if the log and the validation disagree on
+    which word_ids were rendered, if any row is non-ok, if any log
+    entry is missing source/display fields, or if placeholder occurrences
+    were silently zero. Does not re-render, does not mutate artifacts.
 """
 from __future__ import annotations
 
@@ -36,6 +43,10 @@ from .mapping_confirmer import (
     write_confirmed_yaml,
 )
 from .mapping_reviewer import write_confidence_report, write_mapping_review
+from .render_validator import (
+    format_validation_summary as format_render_validation_summary,
+    validate_render,
+)
 from .renderer import (
     format_console_summary as format_render_summary,
     render_docx,
@@ -205,6 +216,38 @@ def build_parser() -> argparse.ArgumentParser:
             "Path to write the rendered Word report (.docx). "
             "render_log.yml is written alongside in the same directory."
         ),
+    )
+
+    vr = sub.add_parser(
+        "validate-render",
+        help=(
+            "Read-only cross-check of the three rendered-output artifacts: "
+            "verify the rendered docx contains no {{ word_NNNN }} "
+            "placeholders, render_log.yml and run_validation.xlsx agree "
+            "one-to-one on every word_id, every row is ok, every log entry "
+            "carries source/display fields, and placeholder_occurrences "
+            ">= 1. Never re-renders, never mutates artifacts."
+        ),
+    )
+    vr.add_argument(
+        "--docx",
+        type=Path,
+        required=True,
+        help="Rendered Word report (.docx) written by `render-docx`",
+    )
+    vr.add_argument(
+        "--render-log",
+        type=Path,
+        required=True,
+        dest="render_log",
+        help="render_log.yml written alongside the rendered docx",
+    )
+    vr.add_argument(
+        "--run-validation",
+        type=Path,
+        required=True,
+        dest="run_validation",
+        help="run_validation.xlsx written by `run-preview`",
     )
 
     return parser
@@ -404,6 +447,29 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 9
         print(format_render_summary(render_report))
         return 0
+
+    if args.command == "validate-render":
+        for label, path in (
+            ("--docx", args.docx),
+            ("--render-log", args.render_log),
+            ("--run-validation", args.run_validation),
+        ):
+            if not path.exists():
+                print(f"error: {label} file not found: {path}", file=sys.stderr)
+                return 2
+        vr_report = validate_render(
+            docx_path=args.docx,
+            render_log_path=args.render_log,
+            run_validation_path=args.run_validation,
+        )
+        # 10 keeps this distinct from 2 (missing inputs), 3 (strict gate),
+        # 4 (validate-artifacts), 5 (incomplete confirm), 6/7 (run-preview),
+        # 8/9 (render-docx) so automation can tell which gate held.
+        if vr_report.ok:
+            print(format_render_validation_summary(vr_report))
+            return 0
+        print(format_render_validation_summary(vr_report), file=sys.stderr)
+        return 10
 
     return 1
 

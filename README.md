@@ -52,7 +52,13 @@ python -m src.main render-docx \
     --run-validation output/run_preview/run_validation.xlsx \
     --out            output/new_report.docx
 
-# 8. Run the test suite.
+# 8. Cross-check the three rendered-output artifacts agree.
+python -m src.main validate-render \
+    --docx           output/new_report.docx \
+    --render-log     output/render_log.yml \
+    --run-validation output/run_preview/run_validation.xlsx
+
+# 9. Run the test suite.
 python -m pytest
 ```
 
@@ -389,6 +395,87 @@ convention.
   `万单`, `亿单`, `万人`, `万次`, `万个`, `万`, `单`, `人`, `次`,
   `个`, `%`, `‰`) is recognised. A raw token outside this shape is
   surfaced as a `format_inference_failed` row, not silently rendered.
+
+## Final cross-check: `validate-render`
+
+`render-docx` writes three artifacts — `new_report.docx`,
+`render_log.yml`, and (upstream from `run-preview`)
+`run_validation.xlsx`. Each is a different lens on the same set of
+rendered Word numbers; if they drift apart, the audit silently lies.
+`validate-render` reloads all three from disk and proves they tell the
+same story:
+
+```bash
+python -m src.main validate-render \
+    --docx           output/new_report.docx \
+    --render-log     output/render_log.yml \
+    --run-validation output/run_preview/run_validation.xlsx
+```
+
+What it proves on success:
+
+- the rendered `new_report.docx` contains **no** `{{ word_NNNN }}`
+  placeholder strings — every confirmed metric was actually
+  substituted, not leaked through as a literal placeholder;
+- `render_log.yml` has **exactly one** replacement entry per
+  `run_validation.xlsx` `word_id` (and vice versa) — no missing log
+  rows, no extra log rows;
+- **every** `run_validation` row has `Status=ok` and **every** log row
+  has `status=ok` — refuses to bless a rendered docx whose run-preview
+  or render gate already failed;
+- every log row carries non-empty `generated_value`, `source_sheet`,
+  `source_cell`, and `display_text` — the audit-trail fields a reviewer
+  walks back to the Excel origin;
+- per word_id, the log's `source_sheet`, `source_cell`,
+  `raw_excel_value`, `generated_value`, `raw_token`, and `unit` AGREE
+  with the matching `run_validation` row — presence alone isn't enough,
+  because a hand-edited log could claim a fabricated source or invented
+  number while the validation still holds the true value;
+- every log row has `placeholder_occurrences >= 1` — a zero count means
+  the renderer silently dropped a confirmed metric or the log was
+  hand-edited;
+- every `display_text` from the log appears in the rendered docx at
+  least `placeholder_occurrences` times — without this the validator
+  has no eyes on what the docx actually says, and a hand-edited number
+  (e.g. "100元" swapped for "999元") would pass every other gate while
+  silently misrepresenting the metric;
+- no `word_id` appears twice in either artifact.
+
+### Exit codes
+
+- `0` — all three artifacts agree.
+- `2` — `--docx`, `--render-log`, or `--run-validation` is missing.
+- `10` — at least one consistency check failed. The per-issue list is
+  printed to stderr with a short code (`leftover_placeholder`,
+  `missing_render_log_row`, `extra_render_log_row`,
+  `render_log_duplicate_word_id`,
+  `run_validation_duplicate_word_id`,
+  `run_validation_status_not_ok`, `render_log_status_not_ok`,
+  `render_log_missing_field`, `zero_placeholder_occurrences`,
+  `audit_value_drift`, `docx_rendered_text_missing`) so automation
+  can react per code instead of grep'ing free text.
+
+### Limitations of v1
+
+- Read-only by design: never re-renders the docx, never mutates an
+  artifact, never calls out to an LLM, GUI, network, or Microsoft Word
+  automation. A failed gate is a directive to inspect the artifacts,
+  not to re-run the pipeline.
+- Walks paragraphs and top-level table cells only — the same surfaces
+  the renderer writes into. Headers, footers, nested tables, and text
+  boxes are out of scope; a placeholder leaked into one of those
+  surfaces would not be caught by v1.
+- Treats the run-validation column names by their canonical header
+  spellings (`Word ID`, `Source Sheet`, `Source Cell`, `Raw Excel
+  Value`, `Generated Value`, `Word Raw Token`, `Word Unit`,
+  `Status`). A renamed column will surface as `run_validation_schema`,
+  not as a silent skip.
+- The docx-text check counts `display_text` occurrences longest-first
+  with sentinel replacement, so a shorter display_text cannot be
+  falsely credited an occurrence consumed by a longer overlapping
+  match. A docx tampered from "100元 1100元" → "999元 1100元" is
+  caught by this sweep, not masked by the residual "100元" inside
+  "1100元".
 
 ## What this prototype is **not**
 
