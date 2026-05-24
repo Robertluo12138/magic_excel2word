@@ -13,10 +13,13 @@ Subcommands for the learn-mode trust loop:
   * ``run-preview`` — narrow run-mode preview. Resolves each confirmed
     mapping against a NEW Excel workbook and writes a per-row run
     validation artifact. **Does not render a Word document.**
-
-Future commands (full ``run`` for production Word rendering) are
-intentionally absent — `run-preview` is the bridge that proves the
-confirmed mappings still resolve cleanly against a new period.
+  * ``render-docx`` — deterministic Word renderer. Substitutes
+    ``{{ word_NNNN }}`` placeholders in ``converted_template.docx``
+    using ``run_validation.xlsx`` and writes ``new_report.docx`` plus
+    ``render_log.yml``. Fails loudly when any validation row is non-ok,
+    when the template references a word_id absent from validation,
+    when validation has an unused word_id, or when display formatting
+    cannot be safely inferred from the historical raw token.
 """
 from __future__ import annotations
 
@@ -33,6 +36,10 @@ from .mapping_confirmer import (
     write_confirmed_yaml,
 )
 from .mapping_reviewer import write_confidence_report, write_mapping_review
+from .renderer import (
+    format_console_summary as format_render_summary,
+    render_docx,
+)
 from .run_preview import (
     format_console_summary as format_preview_summary,
     run_preview,
@@ -162,6 +169,42 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="Output directory for run_validation.xlsx",
+    )
+
+    render = sub.add_parser(
+        "render-docx",
+        help=(
+            "Substitute {{ word_NNNN }} placeholders in "
+            "converted_template.docx using run_validation.xlsx and write "
+            "the rendered Word report plus render_log.yml. Fails loudly "
+            "when any validation row is non-ok, when the template "
+            "references a word_id absent from validation, when validation "
+            "has an unused word_id, or when display text cannot be safely "
+            "inferred from the historical raw token. Does NOT use an LLM, "
+            "GUI, network, or Microsoft Word automation."
+        ),
+    )
+    render.add_argument(
+        "--template",
+        type=Path,
+        required=True,
+        help="converted_template.docx written by `learn`",
+    )
+    render.add_argument(
+        "--run-validation",
+        type=Path,
+        required=True,
+        dest="run_validation",
+        help="run_validation.xlsx written by `run-preview`",
+    )
+    render.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help=(
+            "Path to write the rendered Word report (.docx). "
+            "render_log.yml is written alongside in the same directory."
+        ),
     )
 
     return parser
@@ -325,6 +368,41 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(format_preview_summary(preview_report, out_path), file=sys.stderr)
             return 7
         print(format_preview_summary(preview_report, out_path))
+        return 0
+
+    if args.command == "render-docx":
+        if not args.template.exists():
+            print(f"error: template file not found: {args.template}", file=sys.stderr)
+            return 2
+        if not args.run_validation.exists():
+            print(
+                f"error: run-validation file not found: {args.run_validation}",
+                file=sys.stderr,
+            )
+            return 2
+
+        render_report = render_docx(
+            template_path=args.template,
+            run_validation_path=args.run_validation,
+            out_docx_path=args.out,
+        )
+        if render_report.fatal_errors:
+            # 8 keeps this distinct from 2 (missing inputs), 3 (strict
+            # gate), 4 (validate-artifacts), 5 (incomplete confirm),
+            # 6/7 (run-preview) so automation can tell which gate held.
+            # A fatal error means the inputs themselves are unusable —
+            # no docx or log is written.
+            print(format_render_summary(render_report), file=sys.stderr)
+            return 8
+        if render_report.failures:
+            # 9 = per-row gate failure (non-ok validation, missing or
+            # duplicated generated value, orphan validation row,
+            # un-inferable format). No partial docx is written: CLAUDE.md
+            # forbids producing a Word report that silently omits or
+            # mis-renders a confirmed metric.
+            print(format_render_summary(render_report), file=sys.stderr)
+            return 9
+        print(format_render_summary(render_report))
         return 0
 
     return 1

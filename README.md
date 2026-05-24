@@ -1,11 +1,13 @@
-# magic_excel2word — learn-mode prototype + run-preview
+# magic_excel2word — learn-mode prototype + deterministic renderer
 
 Traceable pipeline that pairs a historical Excel workbook with its finished
 Word report, locates every visible Word number, and produces reviewable
-mapping artifacts. The pipeline now also includes a narrow **run-preview**
-step that resolves a human-confirmed mapping against a NEW Excel workbook
-and emits a per-row validation artifact — still **no Word rendering, no
-LLM, no GUI**. See `CLAUDE.md` for the full design rules.
+mapping artifacts. After a human-confirmed mapping is in hand the pipeline
+can resolve it against a NEW Excel workbook (`run-preview`) and then
+**deterministically render** a new Word report (`render-docx`) by
+substituting `{{ word_NNNN }}` placeholders with display text inferred
+from the historical raw token shape — still **no LLM, no GUI, no
+Microsoft Word automation**. See `CLAUDE.md` for the full design rules.
 
 > ⚠️ **Status: prototype.** Run only against synthetic samples until the
 > trust gate (`learn --strict`) passes on a real pair you have reviewed.
@@ -38,7 +40,19 @@ python -m src.main confirm-mapping \
     --review output/mapping_review.xlsx \
     --out    output/confirmed_mapping.yml
 
-# 6. Run the test suite.
+# 6. Preview a NEW period against the confirmed mapping.
+python -m src.main run-preview \
+    --excel     samples/synthetic/historical.xlsx \
+    --confirmed output/confirmed_mapping.yml \
+    --out       output/run_preview
+
+# 7. Deterministically render the new Word report.
+python -m src.main render-docx \
+    --template       output/converted_template.docx \
+    --run-validation output/run_preview/run_validation.xlsx \
+    --out            output/new_report.docx
+
+# 8. Run the test suite.
 python -m pytest
 ```
 
@@ -196,13 +210,13 @@ as the default in automation pointing at real data.
 
 ## Run-mode preview: `run-preview`
 
-`run-preview` is the narrow next step on the path from confirmed mappings
-toward production rendering. It takes a NEW period's Excel workbook plus
-the existing `confirmed_mapping.yml` and asks one question per confirmed
-row: *does the recorded `(sheet, cell)` still hold a numeric value the
-transform knows how to interpret?* It does **not** render a Word
-document; it writes a per-row validation table so a reviewer can verify
-the mapping is still trustworthy before any rendering work begins.
+`run-preview` is the bridge from a confirmed mapping to a rendered Word
+report. It takes a NEW period's Excel workbook plus the existing
+`confirmed_mapping.yml` and asks one question per confirmed row: *does
+the recorded `(sheet, cell)` still hold a numeric value the transform
+knows how to interpret?* It writes a per-row validation table —
+`run_validation.xlsx` — that `render-docx` then consumes to substitute
+placeholders in the converted template.
 
 ```bash
 python -m src.main run-preview \
@@ -267,12 +281,10 @@ fails loudly rather than silently producing an incorrect rendered number.
 
 ### Limitations of v1
 
-- No Word document is rendered. The deterministic renderer that consumes
-  `run_validation.xlsx` + `converted_template.docx` is intentionally out
-  of scope until the preview artifact has been reviewed in anger.
 - The `Generated Value` is the unrounded numeric value. Number-formatting
   to match the original report's display (`23,456.79万元` vs `23456.789`)
-  belongs to a future renderer.
+  is the renderer's job — see [`render-docx`](#deterministic-render-render-docx)
+  below.
 - Date/period markers (`audit_only_excluded`) and `review_required` rows
   do not participate in the preview at all — by design. Only confirmed
   rows are extracted.
@@ -283,13 +295,109 @@ fails loudly rather than silently producing an incorrect rendered number.
   is pinned by `test_override_to_alternative_carries_alternative_transform`
   and `test_alternative_override_applies_correct_transform_end_to_end`.
 
+## Deterministic render: `render-docx`
+
+`render-docx` is the production Word-output step. It takes
+`converted_template.docx` (from `learn`) plus `run_validation.xlsx`
+(from `run-preview`) and substitutes every `{{ word_NNNN }}` placeholder
+with deterministic display text — preserving the historical raw token's
+unit (`万元`, `亿元`, `%`, `‰`, `元`, `单`, `人`, `次`, `个`), comma
+grouping, decimal precision, and sign style (explicit `+`/`-` or
+accounting parens). No LLM, no GUI, no network, no Microsoft Word
+automation.
+
+```bash
+python -m src.main render-docx \
+    --template       output/converted_template.docx \
+    --run-validation output/run_preview/run_validation.xlsx \
+    --out            output/new_report.docx
+```
+
+On success it writes two files alongside each other:
+
+| File | Purpose |
+| --- | --- |
+| `new_report.docx` | The rendered Word report. Every `{{ word_NNNN }}` placeholder has been replaced; no placeholder strings remain. |
+| `render_log.yml` | One entry per `word_id` with source sheet/cell, raw Excel value, generated value, raw token, unit, display text, replacement count, and per-row status. The full audit a reviewer needs to verify the docx contains every confirmed metric and nothing else. |
+
+### Fail-loud gates
+
+`render-docx` exits non-zero on any of:
+
+- A `run_validation.xlsx` row whose `Status` is not `ok` — render-docx
+  refuses to substitute a value whose run-preview gate already failed.
+- A `word_id` whose `Generated Value` is missing or that appears in more
+  than one validation row. Every confirmed word_id must have exactly
+  one generated value.
+- A `{{ word_NNNN }}` placeholder in the template whose `word_id` is
+  absent from `run_validation.xlsx` (would render `{{ word_NNNN }}`
+  literally into the docx). Exit code `8`, no artifact written.
+- A `word_id` in `run_validation.xlsx` that has no matching placeholder
+  in the template (would silently drop a confirmed metric from the
+  rendered report). Exit code `9`, no artifact written.
+- A historical raw token that doesn't parse into the v1 numeric shape,
+  or whose unit drifts from the validation `Word Unit` field. Exit
+  code `9` with the offending `word_id` named in stderr — the renderer
+  refuses to guess.
+
+Per-row failures halt the whole render: a partial docx that silently
+omits or mis-renders a confirmed metric is exactly the risk CLAUDE.md
+forbids. On any gate failure the docx and log are **not** written and
+the offending word_ids are listed on stderr.
+
+Other exit codes: `2` if `--template` or `--run-validation` is missing.
+
+### Duplicate placeholder accounting
+
+A single confirmed `word_id` may legitimately appear in multiple
+sentences of the historical report (e.g. a headline number referenced
+again in a commentary paragraph). The renderer substitutes **every**
+occurrence and the `render_log.yml` records the actual replacement
+count per `word_id` (`placeholder_occurrences`). No occurrence is
+silently skipped.
+
+### Display formatting v1
+
+The shape the renderer preserves is whatever the historical raw token
+implies:
+
+| Historical raw token | Generated value | Rendered display |
+| --- | --- | --- |
+| `23,456.79万元` | `23456.789` | `23,456.79万元` (comma + 2 decimals + 万元) |
+| `1.23亿元` | `12.3456789` | `12.35亿元` |
+| `37.50%` | `38.45` | `38.45%` |
+| `+5.00%` | `7.5` | `+7.50%` (explicit `+` preserved on positives) |
+| `-1,234.56` | `-1234.567` | `-1,234.57` (HALF_UP rounding) |
+| `(1,234.56)` | `-1234.56` | `(1,234.56)` (accounting-paren style) |
+| `100` | `99.5` | `100` (integer token → HALF_UP rounding) |
+
+The renderer uses `ROUND_HALF_UP` rather than Python's banker's
+rounding default so business display matches the original report's
+convention.
+
+### Limitations of v1
+
+- The renderer touches paragraph and top-level table cell text only —
+  the same surfaces `learn`'s template builder writes into. Headers,
+  footers, footnotes, text boxes, chart data, and nested tables are
+  out of scope.
+- Setting `paragraph.text = …` collapses inline runs into a single
+  run. The template builder already does this when inserting
+  placeholders, so the renderer is not regressing run-level formatting;
+  a future styled-renderer would substitute run-aware.
+- Only the v1 unit set (`元`, `万元`, `亿元`, `千元`, `百万元`,
+  `万单`, `亿单`, `万人`, `万次`, `万个`, `万`, `单`, `人`, `次`,
+  `个`, `%`, `‰`) is recognised. A raw token outside this shape is
+  surfaced as a `format_inference_failed` row, not silently rendered.
+
 ## What this prototype is **not**
 
-- Not a Word renderer. `run-preview` is a per-row validation table, not a
-  `.docx` writer; production Word output still has to wait for the
-  deterministic renderer step.
-- Not an LLM client. Matching is deterministic; any future reranker must
-  layer on top of, not replace, the candidate list.
+- Not an LLM client. Matching and rendering are deterministic; any
+  future reranker must layer on top of, not replace, the candidate
+  list and the deterministic formatter.
+- Not a Microsoft Word automation. The renderer uses `python-docx`
+  directly and works on macOS, Linux, or Windows without Word
+  installed.
 - Not safe for real company files until `--strict` passes and a reviewer
   has signed off on the mapping. Keep real data out of the repo per
   `CLAUDE.md`'s privacy rules.
