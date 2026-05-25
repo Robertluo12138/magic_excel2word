@@ -142,7 +142,7 @@ always valid paths under `tmp_path`.
 
 ## 4. Parity tests that prevent drift
 
-Three pure-docs tests already guard the contracts this matrix
+Four pure-docs tests already guard the contracts this matrix
 depends on. They are listed here so a reader can see the full set
 of safety nets at a glance:
 
@@ -151,6 +151,7 @@ of safety nets at a glance:
 | `tests/test_command_reference_docs.py` | Every CLI subcommand has its own `## \`<name>\`` section in `docs/command_reference.md` with all six contract fields. Every gate-specific `return <N>` in `src/main.py` (codes ≥ 3) is listed in the exit-code map. |
 | `tests/test_milestone_readiness_docs.py` | `docs/milestone_1_readiness.md` exists, is linked from `README.md` and `docs/real_file_pilot.md`, declares prototype status, and contains no positive-readiness marketing claims. |
 | `tests/test_verification_matrix_docs.py` | This matrix doc exists, is linked from `docs/milestone_1_readiness.md`, and **every `tests/<file>.py` it references actually exists on disk** — a renamed or deleted test file cannot silently rot the matrix. |
+| `tests/test_pilot_result_template_docs.py` | `docs/pilot_result_template.md` exists and is linked from both `docs/real_file_pilot.md` and `docs/milestone_1_readiness.md`, so the redacted reviewer form a sponsor relies on cannot silently disappear or become orphaned. |
 
 ---
 

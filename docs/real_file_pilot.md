@@ -430,3 +430,11 @@ one of these:
       changes — no real `.xlsx`, `.docx`, `.yml`, or `.md` artifacts.
 
 If any box cannot be ticked, the pilot is not ready to ship.
+
+Record the outcome of this pilot — exit codes, artifact presence,
+aggregate counts, reviewer decision counts, accepted limitations, and
+the final go/no-go — in the redacted reviewer form in
+[`pilot_result_template.md`](pilot_result_template.md). The template is
+structured so a filled-in copy carries no raw Word tokens, raw Excel
+values, source sheet/cell content, or company identifiers; that is the
+contract a sponsor relies on when reading the recorded evidence.

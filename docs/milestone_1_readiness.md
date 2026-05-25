@@ -201,3 +201,13 @@ Once all eight hold, the manual workflow in
 `docs/real_file_pilot.md` is the supported path. The
 `--allow-incomplete` flag on `confirm-mapping` must **not** be used
 in a real-file pilot.
+
+After walking the pilot, the reviewer records the outcome — per-stage
+exit codes, artifact presence, aggregate coverage counts, reviewer
+decision counts, accepted known limitations, and the final go/no-go —
+in the redacted reviewer form in
+[`pilot_result_template.md`](pilot_result_template.md). The template
+is structured so a filled-in copy contains aggregate counts and policy
+enums only, never raw Word tokens, raw Excel values, source sheet/cell
+content, or company identifiers — that is the contract a sponsor
+relies on when judging the recorded evidence.
