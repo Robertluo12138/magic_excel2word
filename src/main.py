@@ -43,6 +43,7 @@ from .mapping_confirmer import (
     write_confirmed_yaml,
 )
 from .mapping_reviewer import write_confidence_report, write_mapping_review
+from .preflight import emit_advisory as emit_preflight_advisory
 from .render_validator import (
     format_validation_summary as format_render_validation_summary,
     validate_render,
@@ -264,6 +265,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.command == "learn":
+        # Advisory runs first so a typo'd path inside samples/ is flagged
+        # even when the existence check below short-circuits with rc=2.
+        # The advisory is purely lexical (no file I/O) and tolerates
+        # paths that do not exist yet.
+        emit_preflight_advisory(
+            [("--excel", args.excel), ("--word", args.word), ("--out", args.out)],
+            sys.stderr,
+        )
         if not args.excel.exists():
             print(f"error: excel file not found: {args.excel}", file=sys.stderr)
             return 2
@@ -333,9 +342,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.command == "validate-artifacts":
+        # Advisory before existence check; see learn for rationale.
+        emit_preflight_advisory([("--out", args.out)], sys.stderr)
         if not args.out.exists():
             print(f"error: output directory not found: {args.out}", file=sys.stderr)
             return 2
+
         report = validate_artifacts(args.out)
         print(format_validation_summary(report, args.out))
         # 4 keeps this distinct from 2 (input missing) and 3 (strict gate),
@@ -343,6 +355,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0 if report.ok else 4
 
     if args.command == "confirm-mapping":
+        # Advisory before existence checks; see learn for rationale.
+        emit_preflight_advisory(
+            [
+                ("--auto", args.auto),
+                ("--review", args.review),
+                ("--out", args.out),
+            ],
+            sys.stderr,
+        )
         if not args.auto.exists():
             print(f"error: auto mapping not found: {args.auto}", file=sys.stderr)
             return 2
@@ -386,6 +407,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.command == "run-preview":
+        # Advisory before existence checks; see learn for rationale.
+        emit_preflight_advisory(
+            [
+                ("--excel", args.excel),
+                ("--confirmed", args.confirmed),
+                ("--out", args.out),
+            ],
+            sys.stderr,
+        )
         if not args.excel.exists():
             print(f"error: excel file not found: {args.excel}", file=sys.stderr)
             return 2
@@ -414,6 +444,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.command == "render-docx":
+        # Advisory before existence checks; see learn for rationale.
+        emit_preflight_advisory(
+            [
+                ("--template", args.template),
+                ("--run-validation", args.run_validation),
+                ("--out", args.out),
+            ],
+            sys.stderr,
+        )
         if not args.template.exists():
             print(f"error: template file not found: {args.template}", file=sys.stderr)
             return 2
@@ -449,6 +488,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.command == "validate-render":
+        # Advisory before existence checks; see learn for rationale.
+        emit_preflight_advisory(
+            [
+                ("--docx", args.docx),
+                ("--render-log", args.render_log),
+                ("--run-validation", args.run_validation),
+            ],
+            sys.stderr,
+        )
         for label, path in (
             ("--docx", args.docx),
             ("--render-log", args.render_log),
@@ -457,6 +505,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             if not path.exists():
                 print(f"error: {label} file not found: {path}", file=sys.stderr)
                 return 2
+
         vr_report = validate_render(
             docx_path=args.docx,
             render_log_path=args.render_log,

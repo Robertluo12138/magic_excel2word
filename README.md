@@ -509,6 +509,25 @@ What it proves:
   only checks for file existence cannot silently trust a tampered
   audit.
 
+## Real-file pilot
+
+The synthetic quickstart above is the only path the test suite
+exercises. Before pointing the pipeline at a colleague-held real
+Excel + Word pair, read [`docs/real_file_pilot.md`](docs/real_file_pilot.md)
+for the manual workflow: where real files must live (outside this
+repo), the full command sequence with `--strict`, expected exit codes,
+the artifacts a reviewer must inspect, and how to handle UNRESOLVED,
+LOW, EXCLUDED, non-renderable, and tampered rows.
+
+Every pilot-sequence subcommand — `learn`, `validate-artifacts`,
+`confirm-mapping`, `run-preview`, `render-docx`, and `validate-render`
+— also emits a one-time **privacy preflight advisory** on stderr if
+any path you pass on the CLI resolves inside this repo's `samples/`
+folder. (`generate-synthetic` is the deliberate exception; see
+`docs/real_file_pilot.md` §5 for the per-command flag list.) The
+advisory is informational — it never blocks the run and never changes
+matching, confirmation, rendering, or validation logic.
+
 ## What this prototype is **not**
 
 - Not an LLM client. Matching and rendering are deterministic; any
