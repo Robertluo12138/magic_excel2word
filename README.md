@@ -525,7 +525,7 @@ the artifacts a reviewer must inspect, and how to handle UNRESOLVED,
 LOW, EXCLUDED, non-renderable, and tampered rows.
 
 For a reviewer-facing snapshot of which gates and tests exist today,
-the known v1 limitations, and the seven things a reviewer must
+the known v1 limitations, and the eight things a reviewer must
 verify before sponsoring a real-file pilot, see
 [`docs/milestone_1_readiness.md`](docs/milestone_1_readiness.md).
 

@@ -174,25 +174,30 @@ human review gate.
 2. The synthetic commands in [§2](#2-commands-that-prove-the-synthetic-pipeline-works)
    above produce the expected exit codes and write every artifact
    `README.md` documents.
-3. The reviewer has read `CLAUDE.md` (design rules, privacy rules)
+3. The operator has walked the rehearsal in
+   [`synthetic_dry_run_checklist.md`](synthetic_dry_run_checklist.md)
+   against the synthetic fixture end-to-end, ticked every
+   observation, and confirmed `git status` stayed clean of
+   generated artifacts.
+4. The reviewer has read `CLAUDE.md` (design rules, privacy rules)
    and `docs/real_file_pilot.md` (manual real-file workflow and
    sign-off checklist) **in full**.
-4. The reviewer has run `pilot-preflight` against the four pilot
+5. The reviewer has run `pilot-preflight` against the four pilot
    paths intended for the real pair and observed exit `0`.
-5. The real Excel + Word pair lives **outside the repo tree** (see
+6. The real Excel + Word pair lives **outside the repo tree** (see
    `docs/real_file_pilot.md` §1). `git status` is clean of those
    paths.
-6. The reviewer accepts the [known limitations in §4](#4-known-limitations--not-production-ready-yet)
+7. The reviewer accepts the [known limitations in §4](#4-known-limitations--not-production-ready-yet)
    for the specific report being trialed — i.e., the report's
    numeric surface fits within paragraph + top-level table cells,
    its units fall inside the v1 unit table, and run-level
    styling drift is acceptable for the trial.
-7. The reviewer has a written rollback plan for the trial: any
+8. The reviewer has a written rollback plan for the trial: any
    non-zero exit at any stage halts the pilot, and any artifact
    discrepancy is investigated by re-running the producing stage
    from earlier audited inputs — never by hand-editing an artifact.
 
-Once all seven hold, the manual workflow in
+Once all eight hold, the manual workflow in
 `docs/real_file_pilot.md` is the supported path. The
 `--allow-incomplete` flag on `confirm-mapping` must **not** be used
 in a real-file pilot.
