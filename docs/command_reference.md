@@ -1,6 +1,6 @@
 # CLI command reference
 
-A compact per-command reference for the eight `python -m src.main`
+A compact per-command reference for the nine `python -m src.main`
 subcommands. Use it to look up purpose, required inputs, outputs,
 and exit-code meanings without re-reading the full `README.md` or
 `docs/real_file_pilot.md`.
@@ -29,7 +29,7 @@ sign-off checklist for a pilot, ...) live in:
   exists; the column refers to real-file pilots. `pilot-summary` is
   the only command contractually redacted for this purpose.
 - Exit codes `0` and `2` are shared success / input-error codes.
-  Codes `3` through `11` are non-overlapping gate-specific failures
+  Codes `3` through `12` are non-overlapping gate-specific failures
   so automation can branch on a single integer; see the
   [exit-code map](#exit-code-map-at-a-glance) at the bottom of this
   file.
@@ -237,6 +237,42 @@ Privacy preflight: emits an advisory if `--out` resolves inside
 
 ---
 
+## `pilot-preflight`
+
+- **Purpose** — Read-only path/metadata preflight for a real-file
+  pilot. Verifies the four pilot paths exist with the expected
+  `.xlsx` / `.docx` suffix, `--out` is a directory (or can be
+  created later), and **no** input/output path resolves inside this
+  repo tree. Intended to be run **before** the first `learn`
+  invocation of a new pilot so an inside-repo or mistyped path is
+  caught up front instead of after partial artifacts have been
+  written.
+- **Required inputs** — `--historical-excel <historical.xlsx>`,
+  `--historical-word <finished_report.docx>`,
+  `--new-excel <new_period.xlsx>`, `--out <pilot output directory>`.
+- **Outputs written** — none.
+- **Exit codes** — `0` success; `2` at least one per-path issue
+  (missing input, wrong suffix, `--out` exists but is not a
+  directory, `--out` cannot be created because its nearest existing
+  ancestor is not a directory); `12` at least one pilot path
+  resolves inside the repo tree (privacy refusal — strictly stronger
+  than the `samples/` advisory). When both kinds of failure are
+  present, `12` wins so the privacy refusal is never masked.
+- **Read-only?** — yes; never opens any document, never mutates a
+  file, never calls out to an LLM, GUI, network, or Microsoft Word
+  automation.
+- **Paste-safe?** — **yes**, by contract. Prints only flag labels
+  (`--historical-excel`, …), path basenames, and policy enum
+  statuses (`ok`, `missing`, `bad-suffix`, `not-a-dir`,
+  `cannot-create`, `inside-repo`, `will-be-created`). Full paths,
+  parent directories, and document content never leak.
+
+Privacy preflight: not wired here — the command's own `inside-repo`
+gate is strictly stronger than the `samples/`-only advisory and
+already routes to a dedicated non-zero exit code.
+
+---
+
 ## Exit-code map at a glance
 
 The gate-specific non-zero exit codes are intentionally
@@ -256,6 +292,7 @@ non-overlapping so automation can branch on a single integer. Codes
 | `9` | render-docx per-row gate failure (no docx written) | `render-docx` |
 | `10` | rendered-output cross-check failed | `validate-render` |
 | `11` | nothing to summarize (`auto_mapping.yml` absent) | `pilot-summary` |
+| `12` | pilot path resolves inside the repo tree (privacy refusal) | `pilot-preflight` |
 
-Codes `1` and anything beyond `11` are unused today — treat them
+Codes `1` and anything beyond `12` are unused today — treat them
 as unexpected errors and inspect stderr.

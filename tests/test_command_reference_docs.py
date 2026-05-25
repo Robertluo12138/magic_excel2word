@@ -38,6 +38,7 @@ EXPECTED_SUBCOMMANDS = (
     "render-docx",
     "validate-render",
     "pilot-summary",
+    "pilot-preflight",
 )
 
 
@@ -146,9 +147,9 @@ def test_command_reference_section_documents_required_label(name: str, label: st
     )
 
 
-# Shared codes (0, 2) plus gate-specific codes 3-11. Codes 1 and >11 are
+# Shared codes (0, 2) plus gate-specific codes 3-12. Codes 1 and >12 are
 # documented as unused; this test pins the current contract.
-EXPECTED_EXIT_CODES = (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+EXPECTED_EXIT_CODES = (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
 
 
 def _exit_code_map_codes() -> set[int]:
@@ -164,7 +165,7 @@ def _exit_code_map_codes() -> set[int]:
 
 def test_exit_code_map_lists_shared_and_gate_specific_codes():
     """The exit-code map must enumerate the shared codes (0, 2) and every
-    gate-specific code (3 through 11). Automation branches on a single
+    gate-specific code (3 through 12). Automation branches on a single
     integer, so a missing row in the map means a missing contract.
     """
     map_codes = _exit_code_map_codes()
@@ -172,7 +173,7 @@ def test_exit_code_map_lists_shared_and_gate_specific_codes():
     assert not missing, (
         f"docs/command_reference.md exit-code map is missing rows for: "
         f"{missing}. The map must list shared codes 0 and 2 plus "
-        f"gate-specific codes 3 through 11."
+        f"gate-specific codes 3 through 12."
     )
 
 

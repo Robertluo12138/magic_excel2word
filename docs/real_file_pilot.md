@@ -65,6 +65,25 @@ table in [§2c](#2c-expected-exit-codes) below is the canonical
 per-stage view; the reference doc collects the same codes into a
 single map.
 
+> **Before the first `learn` invocation**, run the read-only
+> [`pilot-preflight`](command_reference.md#pilot-preflight) command
+> against the same four paths the sequence below uses. It verifies
+> the input files exist with the right suffix, `--out` is a
+> directory (or can be created), and — most importantly — that no
+> pilot path resolves inside this repo tree. The check never opens
+> any document and prints only flag labels and basenames, so its
+> output is safe to paste into a ticket. Exit codes: `0` ready,
+> `2` per-path issue (missing/wrong-suffix/not-a-dir), `12` privacy
+> refusal (a pilot path lands inside the repo tree).
+>
+> ```bash
+> python -m src.main pilot-preflight \
+>     --historical-excel "$PILOT/inputs/historical.xlsx" \
+>     --historical-word  "$PILOT/inputs/finished_report.docx" \
+>     --new-excel        "$PILOT/inputs/new_period.xlsx" \
+>     --out              "$PILOT/output"
+> ```
+
 ### 2a. Environment setup (cross-platform)
 
 The pipeline is pure Python plus `openpyxl` / `python-docx` / `PyYAML`
@@ -208,6 +227,7 @@ not have to context-switch between docs.
 | `render-docx` | `0` | `2` missing inputs; `8` fatal input error (no docx written); `9` per-row gate failure (no docx written) |
 | `validate-render` | `0` | `2` missing inputs; `10` at least one consistency check failed |
 | `pilot-summary` (optional) | `0` | `2` missing `--out` (or not a directory); `11` `auto_mapping.yml` not present — nothing to summarize |
+| `pilot-preflight` (optional, pre-pilot) | `0` | `2` per-path issue (missing input, wrong suffix, `--out` exists but is not a directory, `--out` cannot be created because its nearest existing ancestor is not a directory); `12` a pilot path resolves inside the repo tree |
 
 A **non-zero exit at any stage halts the pilot**. Do not pass the
 generated `new_report.docx` to a stakeholder until every stage above

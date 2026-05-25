@@ -35,6 +35,13 @@ Subcommands for the learn-mode trust loop:
     basenames, or individual ``word_id`` values. Safe to copy-paste
     into a chat/ticket without leaking real-data details. Fails when
     the required minimum (``auto_mapping.yml``) is absent.
+  * ``pilot-preflight`` — read-only path/metadata preflight for a
+    real-file pilot. Verifies the four pilot paths exist with the
+    expected ``.xlsx`` / ``.docx`` suffix, ``--out`` is a directory
+    (or can be created later), and **no** input/output path resolves
+    inside the repo tree. Never opens any document, never mutates a
+    file. Prints only flag labels and path basenames so the output
+    is safe to paste.
 """
 from __future__ import annotations
 
@@ -51,6 +58,10 @@ from .mapping_confirmer import (
     write_confirmed_yaml,
 )
 from .mapping_reviewer import write_confidence_report, write_mapping_review
+from .pilot_preflight import (
+    format_report as format_pilot_preflight_report,
+    preflight as run_pilot_preflight,
+)
 from .pilot_summary import format_summary as format_pilot_summary, summarize_pilot
 from .preflight import emit_advisory as emit_preflight_advisory
 from .render_validator import (
@@ -275,6 +286,44 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="Pilot output directory previously written by `learn` (and later stages)",
+    )
+
+    pp = sub.add_parser(
+        "pilot-preflight",
+        help=(
+            "Read-only path/metadata preflight for a real-file pilot. "
+            "Verifies the four pilot paths exist with the expected suffix, "
+            "--out is a directory (or can be created later), and no path "
+            "resolves inside this repo tree. Never opens any document, "
+            "never mutates a file. Prints only flag labels and basenames."
+        ),
+    )
+    pp.add_argument(
+        "--historical-excel",
+        type=Path,
+        required=True,
+        dest="historical_excel",
+        help="Historical-period Excel workbook (.xlsx)",
+    )
+    pp.add_argument(
+        "--historical-word",
+        type=Path,
+        required=True,
+        dest="historical_word",
+        help="Historical-period finished Word report (.docx)",
+    )
+    pp.add_argument(
+        "--new-excel",
+        type=Path,
+        required=True,
+        dest="new_excel",
+        help="New-period Excel workbook to render against (.xlsx)",
+    )
+    pp.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Output directory for pilot artifacts (must be outside the repo)",
     )
 
     return parser
@@ -539,6 +588,31 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 11
         print(text)
         return 0
+
+    if args.command == "pilot-preflight":
+        # Read-only by contract: never opens any document, never mutates
+        # a file. No privacy advisory is wired here because the command's
+        # own inside-repo gate is strictly stronger — it refuses any path
+        # under the repo tree (exit 12), not just paths under samples/.
+        report = run_pilot_preflight(
+            historical_excel=args.historical_excel,
+            historical_word=args.historical_word,
+            new_excel=args.new_excel,
+            out=args.out,
+        )
+        text = format_pilot_preflight_report(report)
+        if report.ok:
+            print(text, end="")
+            return 0
+        print(text, end="", file=sys.stderr)
+        # 12 keeps the privacy refusal distinct from 2 (generic input
+        # error) so automation can branch on it: a 12 means a pilot
+        # path landed inside the repo tree (refuse, do NOT retry with
+        # the same path), while 2 means a missing or malformed input
+        # (operator typo, fixable in place).
+        if report.inside_repo_count:
+            return 12
+        return 2
 
     if args.command == "validate-render":
         # Advisory before existence checks; see learn for rationale.
