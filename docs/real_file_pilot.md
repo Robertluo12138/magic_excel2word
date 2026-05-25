@@ -61,6 +61,44 @@ If you accidentally placed a real file inside the repo, move it out
 **before** running any `git add`. Use `git status` to verify the working
 tree is clean of those paths afterwards.
 
+### 1a. Operator first-time learn-only drop-zone (narrow exception)
+
+`operator_pilot/` is a deliberate, narrow exception to the "outside
+this repo" rule above, scoped to the **first real-file learn-only
+matching test** an operator runs. It is **not** a general bypass of
+the privacy gate, and it is **not** a substitute for the
+outside-the-repo layout in §1 for any later stage. See
+[`../operator_pilot/README.zh-CN.md`](../operator_pilot/README.zh-CN.md)
+for the operator-facing workflow.
+
+Three invariants keep the exception narrow; if any is violated,
+treat the drop-zone as compromised and fall back to §1 immediately:
+
+- **Learn-only.** The fixed prompt in
+  `operator_pilot/PROMPT_FOR_AGENT.md` allows exactly three commands
+  (`learn --strict`, `validate-artifacts`, `pilot-summary`) and
+  explicitly forbids `confirm-mapping`, `run-preview`, `render-docx`,
+  and `validate-render`. Anything past learn-mode follows the
+  outside-the-repo workflow in §2 below.
+- **Masked by `.gitignore`.** Every file under
+  `operator_pilot/input/` and `operator_pilot/output/` except the
+  two `.gitkeep` markers is ignored. The prompt's report template
+  includes a post-run `git status` check so the operator can verify
+  the mask held.
+- **Four-file invariant.** Only `operator_pilot/README.zh-CN.md`,
+  `operator_pilot/PROMPT_FOR_AGENT.md`, and the two `.gitkeep`
+  markers may be tracked under `operator_pilot/`. The repo's
+  privacy-boundary tests fail if anything else lands in a commit,
+  so a widened bypass surface cannot survive CI.
+
+`pilot-preflight` is **not** used for this exception: its
+inside-repo gate (exit `12`) refuses any pilot path inside the repo
+tree by design, which is correct for every other real-file pilot
+but incompatible with the drop-zone's stated purpose. Every
+subsequent stage (confirm / render / validate-render) uses the
+outside-the-repo workflow in §2 and §3, where `pilot-preflight` is
+the read-only pre-pilot gate.
+
 ---
 
 ## 2. Command sequence
