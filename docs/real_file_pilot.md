@@ -14,6 +14,11 @@ repo's `samples/` folder; see [§5](#5-privacy-preflight-advisory) below.
 > report to a customer or stakeholder until a reviewer has walked every
 > artifact listed in [§3](#3-artifacts-a-reviewer-must-inspect).
 
+> For a reviewer-facing snapshot of which gates and tests exist
+> today, the known v1 limitations, and the seven things a reviewer
+> must verify before sponsoring a real-file pilot, see
+> [`milestone_1_readiness.md`](milestone_1_readiness.md).
+
 ---
 
 ## 1. Where real files must live
