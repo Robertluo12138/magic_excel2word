@@ -23,6 +23,15 @@ answer a field should leave it blank and record a non-go in §8 instead.
 > and the eight verification items in
 > [`milestone_1_readiness.md` §5](milestone_1_readiness.md#5-what-a-reviewer-must-verify-before-any-real-file-pilot).
 
+> Use [`artifact_review_guide.md`](artifact_review_guide.md) as the
+> per-artifact inspection checklist while filling in §2 / §4 / §5
+> below. The guide names the **aggregate, status, and schema** checks
+> a reviewer performs on each artifact, and lists the content (raw
+> business numbers, raw Word snippets, Excel cell values, source
+> sheet/cell content, company identifiers, …) that **must not** leave
+> the artifact into this template — the constraint this template's
+> redaction depends on.
+
 ---
 
 ## What this template MUST NOT contain

@@ -284,6 +284,15 @@ Before trusting the rendered Word report, walk these artifacts in
 order. Each one answers a question the next stage assumes is already
 true.
 
+> For a per-artifact inspection checklist using **aggregate, status,
+> and schema checks only** — and the strict list of content (raw
+> business numbers, raw Word snippets, Excel cell values, source
+> sheet/cell content, company identifiers, …) that **must not** leave
+> the artifact into the repo or any doc — see
+> [`artifact_review_guide.md`](artifact_review_guide.md). The walk
+> below names the artifacts in order; the guide tells you what to
+> look at inside each one.
+
 1. **`confidence_report.md`** — read the **top** sections first. The
    doc deliberately leads with UNRESOLVED, LOW, ambiguous, and
    EXCLUDED-by-policy buckets so the items needing human eyes are
