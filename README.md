@@ -62,6 +62,11 @@ python -m src.main validate-render \
 python -m pytest
 ```
 
+For a compact per-command reference (purpose, required inputs, outputs
+written, exit codes, read-only vs. writes, and whether the console
+output is safe to paste into a chat or ticket), see
+[`docs/command_reference.md`](docs/command_reference.md).
+
 ## Learn-mode artifacts
 
 `learn` writes four files under `--out`. Every row in every file carries

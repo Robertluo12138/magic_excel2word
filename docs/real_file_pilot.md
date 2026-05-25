@@ -57,6 +57,14 @@ The exact sequence is the same as the synthetic quickstart in
 `README.md`, with one change: every `--excel`, `--word`, and `--out`
 path points at your external pilot directory.
 
+For a compact per-command reference (purpose, required inputs,
+outputs written, exit codes, read-only vs. writes, and which
+commands' console output is safe to paste into a chat or ticket),
+see [`command_reference.md`](command_reference.md). The exit-code
+table in [§2c](#2c-expected-exit-codes) below is the canonical
+per-stage view; the reference doc collects the same codes into a
+single map.
+
 ### 2a. Environment setup (cross-platform)
 
 The pipeline is pure Python plus `openpyxl` / `python-docx` / `PyYAML`
