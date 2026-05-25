@@ -27,6 +27,14 @@ Subcommands for the learn-mode trust loop:
     which word_ids were rendered, if any row is non-ok, if any log
     entry is missing source/display fields, or if placeholder occurrences
     were silently zero. Does not re-render, does not mutate artifacts.
+  * ``pilot-summary`` — read-only redacted summary of a pilot output
+    directory. Reports artifact presence, aggregate counts (from each
+    artifact's own ``summary`` block / ``Status`` column), and a
+    next-action hint per stage. Never prints raw Word tokens,
+    generated values, source sheet/cell content, file paths beyond
+    basenames, or individual ``word_id`` values. Safe to copy-paste
+    into a chat/ticket without leaking real-data details. Fails when
+    the required minimum (``auto_mapping.yml``) is absent.
 """
 from __future__ import annotations
 
@@ -43,6 +51,7 @@ from .mapping_confirmer import (
     write_confirmed_yaml,
 )
 from .mapping_reviewer import write_confidence_report, write_mapping_review
+from .pilot_summary import format_summary as format_pilot_summary, summarize_pilot
 from .preflight import emit_advisory as emit_preflight_advisory
 from .render_validator import (
     format_validation_summary as format_render_validation_summary,
@@ -249,6 +258,23 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         dest="run_validation",
         help="run_validation.xlsx written by `run-preview`",
+    )
+
+    ps = sub.add_parser(
+        "pilot-summary",
+        help=(
+            "Read-only redacted summary of a pilot output directory. "
+            "Reports artifact presence, aggregate counts, and per-stage "
+            "next-action hints. Never prints raw Word tokens, generated "
+            "values, source sheet/cell content, file paths beyond "
+            "basenames, or individual word_ids. Safe to copy-paste."
+        ),
+    )
+    ps.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Pilot output directory previously written by `learn` (and later stages)",
     )
 
     return parser
@@ -485,6 +511,33 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(format_render_summary(render_report), file=sys.stderr)
             return 9
         print(format_render_summary(render_report))
+        return 0
+
+    if args.command == "pilot-summary":
+        # Advisory before existence check; see learn for rationale.
+        emit_preflight_advisory([("--out", args.out)], sys.stderr)
+        if not args.out.exists():
+            print(
+                f"error: output directory not found: {args.out}",
+                file=sys.stderr,
+            )
+            return 2
+        if not args.out.is_dir():
+            print(
+                f"error: --out must be a directory: {args.out}",
+                file=sys.stderr,
+            )
+            return 2
+
+        summary = summarize_pilot(args.out)
+        text = format_pilot_summary(summary)
+        # 11 keeps this distinct from 2/3/4/5/6/7/8/9/10 so automation can
+        # tell which gate held. A fatal here means the minimum learn-mode
+        # artifact is absent — nothing meaningful to summarize.
+        if summary.fatal_errors:
+            print(text, file=sys.stderr)
+            return 11
+        print(text)
         return 0
 
     if args.command == "validate-render":

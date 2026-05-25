@@ -57,13 +57,82 @@ The exact sequence is the same as the synthetic quickstart in
 `README.md`, with one change: every `--excel`, `--word`, and `--out`
 path points at your external pilot directory.
 
-Assume `PILOT=~/pilot_data/<pilot_label>` for brevity.
+### 2a. Environment setup (cross-platform)
+
+The pipeline is pure Python plus `openpyxl` / `python-docx` / `PyYAML`
+— it does **not** require Microsoft Word, a venv, or any specific
+package manager. Any Python 3.10+ environment that has the deps from
+`requirements.txt` installed will work. Pick whichever path matches
+your platform and toolchain. The exit-code contract in
+[§2c](#2c-expected-exit-codes) is identical no matter which path you use.
+
+**macOS / Linux (bash or zsh, virtualenv):**
 
 ```bash
-# (0) Activate the project venv and confirm dependencies are pinned.
+# Either create a project venv ...
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+# ... or install into your existing environment of choice (conda, uv,
+# pipx, system python). The pipeline does not care which.
+```
 
+**Windows (PowerShell, virtualenv):**
+
+```powershell
+# Either create a project venv ...
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+# (if blocked: `Set-ExecutionPolicy -Scope Process RemoteSigned` then re-run)
+pip install -r requirements.txt
+# ... or install into conda, uv, or system python.
+```
+
+**Windows (cmd.exe, virtualenv):**
+
+```bat
+python -m venv .venv
+.\.venv\Scripts\activate.bat
+pip install -r requirements.txt
+```
+
+If you already have a working Python with the deps installed, you can
+skip the activation step entirely and invoke `python -m src.main …`
+directly — the CLI does not depend on a virtualenv being active.
+
+### 2b. Pilot variables and command sequence
+
+Set a `PILOT` (bash/zsh) or `$Pilot` (PowerShell) variable that points
+at your external pilot directory so the command sequence reads the
+same on every shell.
+
+**macOS / Linux (bash or zsh):**
+
+```bash
+# Pick any path OUTSIDE the repo — ~/pilot_data is just a convention.
+PILOT="$HOME/pilot_data/<pilot_label>"
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# Pick any path OUTSIDE the repo.
+$Pilot = "$HOME\pilot_data\<pilot_label>"
+```
+
+**Windows (cmd.exe):**
+
+```bat
+set PILOT=%USERPROFILE%\pilot_data\<pilot_label>
+```
+
+The command sequence itself is identical across shells; only the
+variable-reference syntax differs (`"$PILOT/..."` on bash/zsh,
+`"$Pilot\..."` on PowerShell, `"%PILOT%\..."` on cmd.exe). The bash
+form below is canonical; translate the variable interpolation as
+needed for your shell.
+
+```bash
 # (1) Strict learn — the trust gate before any real-file pilot.
 #     This MUST exit 0 before you confirm or render.
 python -m src.main learn \
@@ -102,7 +171,21 @@ python -m src.main validate-render \
     --run-validation "$PILOT/output/run_preview/run_validation.xlsx"
 ```
 
-### Expected exit codes
+On Windows PowerShell, the same call looks like:
+
+```powershell
+# (1) Strict learn — same arguments, only the variable + path separator
+#     differ. Backticks ` continue the line in PowerShell.
+python -m src.main learn `
+    --excel  "$Pilot\inputs\historical.xlsx" `
+    --word   "$Pilot\inputs\finished_report.docx" `
+    --out    "$Pilot\output" `
+    --strict
+# ... and so on for steps (2)–(6). pathlib normalizes the slashes on
+# Python's side, so forward slashes also work if you prefer them.
+```
+
+### 2c. Expected exit codes
 
 The codes below are the contract; automation can branch on them. They
 are unchanged from `README.md` — repeated here so a pilot operator does
@@ -116,11 +199,42 @@ not have to context-switch between docs.
 | `run-preview` | `0` | `2` missing inputs; `6` `confirmed_mapping.yml` cannot prove completeness; `7` a confirmed source/transform broke on the new workbook |
 | `render-docx` | `0` | `2` missing inputs; `8` fatal input error (no docx written); `9` per-row gate failure (no docx written) |
 | `validate-render` | `0` | `2` missing inputs; `10` at least one consistency check failed |
+| `pilot-summary` (optional) | `0` | `2` missing `--out` (or not a directory); `11` `auto_mapping.yml` not present — nothing to summarize |
 
 A **non-zero exit at any stage halts the pilot**. Do not pass the
 generated `new_report.docx` to a stakeholder until every stage above
 returns `0`. The `--allow-incomplete` flag on `confirm-mapping` is an
 exploratory escape hatch and must not be used in a real-file pilot.
+
+### 2d. Optional: read-only redacted progress check
+
+At any point in the sequence — after `learn`, mid-review,
+post-`render-docx`, etc. — you can ask for a one-shot redacted summary
+of the pilot output directory:
+
+```bash
+python -m src.main pilot-summary --out "$PILOT/output"
+```
+
+The summary reports artifact presence, file sizes, per-stage aggregate
+counts (from each artifact's own `summary` block / `Status` column),
+and a single next-action hint per stage. It is **safe to paste into a
+chat, ticket, or commit**: by contract it never prints raw Word
+tokens, generated values, raw Excel values, source sheet/cell content,
+reviewer notes, individual `word_id` values, or file paths beyond
+basenames. The `--out` directory is reduced to its basename in the
+header for the same reason.
+
+Exit codes are deliberately narrow:
+
+- `0` — summary printed.
+- `2` — `--out` does not exist, or is not a directory.
+- `11` — `--out` exists but `auto_mapping.yml` is absent, so there is
+  nothing meaningful to summarize. Run `learn` first.
+
+`pilot-summary` is **read-only**: it never re-runs the pipeline, never
+mutates an artifact, never calls out to an LLM, GUI, network, or
+Microsoft Word automation. It only inspects what is already on disk.
 
 ---
 
