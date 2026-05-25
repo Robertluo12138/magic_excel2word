@@ -118,6 +118,13 @@ The complete exit-code map (with the gate-specific code for every
 command) lives in `docs/command_reference.md` and is parity-tested
 against `src/main.py` by `tests/test_command_reference_docs.py`.
 
+For the reverse lens — *which pytest file(s) pin each gate above,
+and which gates the acceptance smoke covers end-to-end* — see
+[`docs/verification_matrix.md`](verification_matrix.md). That matrix
+is itself guarded by a small docs consistency test
+(`tests/test_verification_matrix_docs.py`) that fails if any
+referenced test file no longer exists.
+
 ---
 
 ## 4. Known limitations — not production-ready yet
